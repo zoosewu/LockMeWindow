@@ -37,6 +37,7 @@ const ID_TARGET: usize = 103;
 const ID_ADD: usize = 104;
 const ID_MANAGED: usize = 105;
 const ID_REMOVE: usize = 106;
+const ID_EXIT: usize = 107;
 const WM_FOREGROUND_CHANGED: u32 = WM_APP + 1;
 const WM_TRAY: u32 = WM_APP + 2;
 const RECONCILE_TIMER: usize = 1;
@@ -402,14 +403,20 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
-        WM_TRAY if lparam as u32 == WM_LBUTTONUP => {
+        WM_TRAY => {
             if let Some(state) = state(hwnd) {
-                restore_from_tray(state);
+                match lparam as u32 {
+                    WM_LBUTTONUP => restore_from_tray(state),
+                    WM_RBUTTONUP => show_tray_menu(state),
+                    _ => {}
+                }
             }
             0
         }
         WM_CLOSE => {
-            DestroyWindow(hwnd);
+            if let Some(state) = state(hwnd) {
+                minimize_to_tray(state);
+            }
             0
         }
         WM_DESTROY => {
@@ -755,6 +762,33 @@ unsafe fn restore_from_tray(state: &mut AppState) {
     remove_tray(state);
     ShowWindow(state.hwnd, SW_RESTORE);
     SetForegroundWindow(state.hwnd);
+}
+
+unsafe fn show_tray_menu(state: &mut AppState) {
+    let menu = CreatePopupMenu();
+    if menu.is_null() {
+        return;
+    }
+    let exit = wide("Exit");
+    AppendMenuW(menu, MF_STRING, ID_EXIT, exit.as_ptr());
+    let mut cursor: POINT = zeroed();
+    if GetCursorPos(&mut cursor) != 0 {
+        SetForegroundWindow(state.hwnd);
+        let command = TrackPopupMenu(
+            menu,
+            TPM_RIGHTBUTTON | TPM_RETURNCMD,
+            cursor.x,
+            cursor.y,
+            0,
+            state.hwnd,
+            null(),
+        );
+        PostMessageW(state.hwnd, WM_NULL, 0, 0);
+        if command == ID_EXIT as i32 {
+            DestroyWindow(state.hwnd);
+        }
+    }
+    DestroyMenu(menu);
 }
 
 unsafe fn remove_tray(state: &mut AppState) {

@@ -11,7 +11,7 @@ LockMeWindow requests administrator access at startup so it can inspect and cont
 3. Choose `Window` or `Monitor`, then select `Add`.
 4. Use `Refresh` to rescan running applications.
 
-Settings are saved immediately to `%APPDATA%\LockMeWindow\settings.json`. Minimize the window to send it to the system tray; close it to unlock the cursor and exit.
+Settings are saved immediately to `%APPDATA%\LockMeWindow\settings.json`. Minimize or close the window to send it to the system tray; left-click the tray icon to restore it or right-click and choose **Exit** to unlock the cursor and quit.
 
 ## Build
 
