@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
+use std::mem::zeroed;
 use std::path::{Path, PathBuf};
+use windows_sys::Win32::Foundation::RECT;
+use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -80,9 +83,38 @@ pub fn settings_path() -> Result<PathBuf> {
         .join("settings.json"))
 }
 
+pub fn ensure_cursor_clip(expected: RECT) -> bool {
+    unsafe {
+        let mut actual: RECT = zeroed();
+        if GetClipCursor(&mut actual) != 0 && same_rect(actual, expected) {
+            return true;
+        }
+        ClipCursor(&expected) != 0 && GetClipCursor(&mut actual) != 0 && same_rect(actual, expected)
+    }
+}
+
+fn same_rect(left: RECT, right: RECT) -> bool {
+    left.left == right.left
+        && left.top == right.top
+        && left.right == right.right
+        && left.bottom == right.bottom
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::mem::zeroed;
+    use std::ptr::null;
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor, GetCursorPos};
+
+    struct RestoreClip(RECT);
+
+    impl Drop for RestoreClip {
+        fn drop(&mut self) {
+            unsafe { ClipCursor(&self.0) };
+        }
+    }
 
     #[test]
     fn one_identity_matches_path_or_process_name() {
@@ -125,5 +157,30 @@ mod tests {
         settings.save_to(&path).unwrap();
         assert_eq!(Settings::load_from(&path).unwrap(), settings);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn active_cursor_lock_recovers_after_external_clear() {
+        unsafe {
+            let mut original: RECT = zeroed();
+            assert_ne!(GetClipCursor(&mut original), 0);
+            let _restore = RestoreClip(original);
+
+            let mut cursor: POINT = zeroed();
+            assert_ne!(GetCursorPos(&mut cursor), 0);
+            let expected = RECT {
+                left: cursor.x - 100,
+                top: cursor.y - 100,
+                right: cursor.x + 100,
+                bottom: cursor.y + 100,
+            };
+            assert_ne!(ClipCursor(&expected), 0);
+            assert_ne!(ClipCursor(null()), 0);
+
+            assert!(ensure_cursor_clip(expected));
+            let mut actual: RECT = zeroed();
+            assert_ne!(GetClipCursor(&mut actual), 0);
+            assert!(same_rect(actual, expected));
+        }
     }
 }

@@ -1,7 +1,9 @@
 #![windows_subsystem = "windows"]
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use lock_me_window::{LockTarget, ManagedApplication, Result, Settings, settings_path};
+use lock_me_window::{
+    LockTarget, ManagedApplication, Result, Settings, ensure_cursor_clip, settings_path,
+};
 use std::ffi::{OsStr, OsString};
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
@@ -37,6 +39,8 @@ const ID_MANAGED: usize = 105;
 const ID_REMOVE: usize = 106;
 const WM_FOREGROUND_CHANGED: u32 = WM_APP + 1;
 const WM_TRAY: u32 = WM_APP + 2;
+const RECONCILE_TIMER: usize = 1;
+const RECONCILE_INTERVAL_MS: u32 = 16;
 
 static MAIN_WINDOW: AtomicIsize = AtomicIsize::new(0);
 
@@ -77,6 +81,9 @@ struct AppState {
     settings_path: PathBuf,
     hook: HWINEVENTHOOK,
     tray_visible: bool,
+    foreground: HWND,
+    active: Option<ManagedApplication>,
+    owns_clip: bool,
 }
 
 fn main() {
@@ -157,6 +164,10 @@ unsafe fn run_message_loop() -> Result<()> {
         return Err(std::io::Error::last_os_error().into());
     }
     (*state_ptr).hook = hook;
+    if SetTimer(hwnd, RECONCILE_TIMER, RECONCILE_INTERVAL_MS, None) == 0 {
+        DestroyWindow(hwnd);
+        return Err(std::io::Error::last_os_error().into());
+    }
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
@@ -289,6 +300,9 @@ unsafe fn create_state(hwnd: HWND, settings: Settings, settings_path: PathBuf) -
         settings_path,
         hook: null_mut(),
         tray_visible: false,
+        foreground: null_mut(),
+        active: None,
+        owns_clip: false,
     })
 }
 
@@ -373,6 +387,12 @@ unsafe extern "system" fn window_proc(
         WM_FOREGROUND_CHANGED => {
             if let Some(state) = state(hwnd) {
                 adjust_lock(state, wparam as HWND);
+            }
+            0
+        }
+        WM_TIMER if wparam == RECONCILE_TIMER => {
+            if let Some(state) = state(hwnd) {
+                reconcile_lock(state);
             }
             0
         }
@@ -469,6 +489,7 @@ unsafe fn add_managed(state: &mut AppState) {
         .push(ManagedApplication { identity, target });
     save_settings(state);
     refresh_managed(state);
+    adjust_lock(state, GetForegroundWindow());
 }
 
 unsafe fn remove_managed(state: &mut AppState) {
@@ -605,6 +626,8 @@ unsafe fn process_name(pid: u32) -> Option<String> {
 }
 
 unsafe fn adjust_lock(state: &mut AppState, foreground: HWND) {
+    state.foreground = foreground;
+    state.active = None;
     if foreground.is_null() {
         unlock(state);
         return;
@@ -626,13 +649,32 @@ unsafe fn adjust_lock(state: &mut AppState, foreground: HWND) {
         return;
     };
 
+    state.active = Some(app);
+    apply_active_lock(state);
+}
+
+unsafe fn reconcile_lock(state: &mut AppState) {
+    let foreground = GetForegroundWindow();
+    if foreground != state.foreground {
+        adjust_lock(state, foreground);
+    } else if state.active.is_some() {
+        apply_active_lock(state);
+    }
+}
+
+unsafe fn apply_active_lock(state: &mut AppState) {
+    let Some(app) = state.active.clone() else {
+        return;
+    };
+
     let rect = match app.target {
-        LockTarget::Window => client_rect_on_screen(foreground),
-        LockTarget::Monitor => monitor_rect(foreground),
+        LockTarget::Window => client_rect_on_screen(state.foreground),
+        LockTarget::Monitor => monitor_rect(state.foreground),
     };
     if let Some(rect) = rect
-        && ClipCursor(&rect) != 0
+        && ensure_cursor_clip(rect)
     {
+        state.owns_clip = true;
         set_status(state.status, &format!("Cursor: locked to {}", app.identity));
         return;
     }
@@ -673,8 +715,11 @@ unsafe fn monitor_rect(hwnd: HWND) -> Option<RECT> {
     (GetMonitorInfoW(monitor, &mut info) != 0).then_some(info.rcMonitor)
 }
 
-unsafe fn unlock(state: &AppState) {
-    ClipCursor(null());
+unsafe fn unlock(state: &mut AppState) {
+    if state.owns_clip {
+        ClipCursor(null());
+        state.owns_clip = false;
+    }
     set_status(state.status, "Cursor: unlocked");
 }
 
@@ -735,7 +780,10 @@ unsafe fn tray_data(hwnd: HWND) -> NOTIFYICONDATAW {
 }
 
 unsafe fn cleanup(state: &AppState) {
-    ClipCursor(null());
+    KillTimer(state.hwnd, RECONCILE_TIMER);
+    if state.owns_clip {
+        ClipCursor(null());
+    }
     if !state.hook.is_null() {
         UnhookWinEvent(state.hook);
     }
