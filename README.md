@@ -14,6 +14,8 @@ LockMeWindow requests administrator access at startup so it can inspect and cont
 
 Settings are saved immediately to `%APPDATA%\LockMeWindow\settings.json`. Minimize or close the window to send it to the system tray; left-click the tray icon to restore it or right-click and choose **Exit** to unlock the cursor and quit.
 
+Only one instance can run at a time. Launching it again restores the existing window from the tray.
+
 ## Build
 
 ```powershell

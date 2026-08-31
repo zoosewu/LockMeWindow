@@ -1,7 +1,13 @@
 use serde::{Deserialize, Serialize};
+use std::ffi::OsStr;
 use std::mem::zeroed;
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use windows_sys::Win32::Foundation::RECT;
+use std::ptr::null;
+use windows_sys::Win32::Foundation::{
+    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_SUCCESS, GetLastError, HANDLE, RECT, SetLastError,
+};
+use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -95,6 +101,31 @@ pub fn ensure_cursor_clip(expected: RECT) -> bool {
     }
 }
 
+pub struct SingleInstance(HANDLE);
+
+impl Drop for SingleInstance {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
+pub fn claim_single_instance(name: &str) -> Result<Option<SingleInstance>> {
+    let name: Vec<u16> = OsStr::new(name).encode_wide().chain(Some(0)).collect();
+    unsafe {
+        SetLastError(ERROR_SUCCESS);
+        let handle = CreateMutexW(null(), 0, name.as_ptr());
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            CloseHandle(handle);
+            Ok(None)
+        } else {
+            Ok(Some(SingleInstance(handle)))
+        }
+    }
+}
+
 fn same_rect(left: RECT, right: RECT) -> bool {
     left.left == right.left
         && left.top == right.top
@@ -166,6 +197,15 @@ mod tests {
     fn old_settings_default_startup_to_off() {
         let settings: Settings = serde_json::from_str(r#"{"apps":[]}"#).unwrap();
         assert!(!settings.start_with_windows);
+    }
+
+    #[test]
+    fn named_instance_is_exclusive_until_released() {
+        let name = format!(r"Local\LockMeWindow.Test.{}", std::process::id());
+        let first = claim_single_instance(&name).unwrap().unwrap();
+        assert!(claim_single_instance(&name).unwrap().is_none());
+        drop(first);
+        assert!(claim_single_instance(&name).unwrap().is_some());
     }
 
     #[test]

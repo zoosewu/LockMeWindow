@@ -2,7 +2,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use lock_me_window::{
-    LockTarget, ManagedApplication, Result, Settings, ensure_cursor_clip, settings_path,
+    LockTarget, ManagedApplication, Result, Settings, claim_single_instance, ensure_cursor_clip,
+    settings_path,
 };
 use std::ffi::{OsStr, OsString};
 use std::mem::{size_of, zeroed};
@@ -44,8 +45,11 @@ const ID_REMOVE: usize = 106;
 const ID_EXIT: usize = 107;
 const ID_STARTUP: usize = 108;
 const STARTUP_TASK_NAME: &str = "LockMeWindow Startup";
+const WINDOW_CLASS: &str = "LockMeWindow.Main";
+const INSTANCE_MUTEX: &str = r"Local\LockMeWindow.SingleInstance";
 const WM_FOREGROUND_CHANGED: u32 = WM_APP + 1;
 const WM_TRAY: u32 = WM_APP + 2;
+const WM_SHOW_EXISTING: u32 = WM_APP + 3;
 const RECONCILE_TIMER: usize = 1;
 const RECONCILE_INTERVAL_MS: u32 = 16;
 
@@ -101,21 +105,35 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    unsafe { run_message_loop() }
+    let start_minimized = std::env::args_os().any(|arg| arg == "--minimized");
+    let Some(_instance) = claim_single_instance(INSTANCE_MUTEX)? else {
+        if !start_minimized {
+            unsafe { show_existing_instance() };
+        }
+        return Ok(());
+    };
+    unsafe { run_message_loop(start_minimized) }
 }
 
-unsafe fn run_message_loop() -> Result<()> {
-    let start_minimized = std::env::args_os().any(|arg| arg == "--minimized");
+unsafe fn show_existing_instance() {
+    let class = wide(WINDOW_CLASS);
+    let hwnd = FindWindowW(class.as_ptr(), null());
+    if !hwnd.is_null() {
+        PostMessageW(hwnd, WM_SHOW_EXISTING, 0, 0);
+    }
+}
+
+unsafe fn run_message_loop(start_minimized: bool) -> Result<()> {
     let instance = GetModuleHandleW(null());
     if instance.is_null() {
         return Err(std::io::Error::last_os_error().into());
     }
 
-    let class_name = wide("LockMeWindow.Main");
+    let class_name = wide(WINDOW_CLASS);
     let class = WNDCLASSW {
         lpfnWndProc: Some(window_proc),
         hInstance: instance,
-        hIcon: LoadIconW(null_mut(), IDI_APPLICATION),
+        hIcon: application_icon(),
         hCursor: LoadCursorW(null_mut(), IDC_ARROW),
         hbrBackground: (COLOR_WINDOW as usize + 1) as _,
         lpszClassName: class_name.as_ptr(),
@@ -429,6 +447,12 @@ unsafe extern "system" fn window_proc(
         WM_TIMER if wparam == RECONCILE_TIMER => {
             if let Some(state) = state(hwnd) {
                 reconcile_lock(state);
+            }
+            0
+        }
+        WM_SHOW_EXISTING => {
+            if let Some(state) = state(hwnd) {
+                restore_from_tray(state);
             }
             0
         }
@@ -892,11 +916,20 @@ unsafe fn tray_data(hwnd: HWND) -> NOTIFYICONDATAW {
         uID: 1,
         uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
         uCallbackMessage: WM_TRAY,
-        hIcon: LoadIconW(null_mut(), IDI_APPLICATION),
+        hIcon: application_icon(),
         ..Default::default()
     };
     copy_wide("LockMeWindow", &mut data.szTip);
     data
+}
+
+unsafe fn application_icon() -> HICON {
+    let icon = LoadIconW(GetModuleHandleW(null()), std::ptr::without_provenance(1));
+    if icon.is_null() {
+        LoadIconW(null_mut(), IDI_APPLICATION)
+    } else {
+        icon
+    }
 }
 
 unsafe fn cleanup(state: &AppState) {
