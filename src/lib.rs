@@ -58,6 +58,8 @@ fn normalize_name(value: &str) -> String {
 #[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct Settings {
     pub apps: Vec<ManagedApplication>,
+    #[serde(default)]
+    pub start_with_windows: bool,
 }
 
 impl Settings {
@@ -152,11 +154,18 @@ mod tests {
                 identity: r"C:\Games\zzz.exe".into(),
                 target: LockTarget::Monitor,
             }],
+            start_with_windows: true,
         };
 
         settings.save_to(&path).unwrap();
         assert_eq!(Settings::load_from(&path).unwrap(), settings);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn old_settings_default_startup_to_off() {
+        let settings: Settings = serde_json::from_str(r#"{"apps":[]}"#).unwrap();
+        assert!(!settings.start_with_windows);
     }
 
     #[test]

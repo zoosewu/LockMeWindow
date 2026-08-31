@@ -7,7 +7,9 @@ use lock_me_window::{
 use std::ffi::{OsStr, OsString};
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicIsize, Ordering};
 use windows_sys::Win32::Foundation::{
@@ -22,9 +24,11 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::{
-    GetCurrentProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    CREATE_NO_WINDOW, GetCurrentProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    QueryFullProcessImageNameW,
 };
 use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
+use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows_sys::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
@@ -38,6 +42,8 @@ const ID_ADD: usize = 104;
 const ID_MANAGED: usize = 105;
 const ID_REMOVE: usize = 106;
 const ID_EXIT: usize = 107;
+const ID_STARTUP: usize = 108;
+const STARTUP_TASK_NAME: &str = "LockMeWindow Startup";
 const WM_FOREGROUND_CHANGED: u32 = WM_APP + 1;
 const WM_TRAY: u32 = WM_APP + 2;
 const RECONCILE_TIMER: usize = 1;
@@ -77,6 +83,7 @@ struct AppState {
     identity_edit: HWND,
     target_combo: HWND,
     managed_list: HWND,
+    startup_checkbox: HWND,
     available: Vec<ProcessChoice>,
     settings: Settings,
     settings_path: PathBuf,
@@ -98,6 +105,7 @@ fn run() -> Result<()> {
 }
 
 unsafe fn run_message_loop() -> Result<()> {
+    let start_minimized = std::env::args_os().any(|arg| arg == "--minimized");
     let instance = GetModuleHandleW(null());
     if instance.is_null() {
         return Err(std::io::Error::last_os_error().into());
@@ -170,7 +178,11 @@ unsafe fn run_message_loop() -> Result<()> {
         return Err(std::io::Error::last_os_error().into());
     }
 
-    ShowWindow(hwnd, SW_SHOW);
+    if start_minimized {
+        minimize_to_tray(&mut *state_ptr);
+    } else {
+        ShowWindow(hwnd, SW_SHOW);
+    }
     UpdateWindow(hwnd);
     PostMessageW(
         hwnd,
@@ -288,6 +300,28 @@ unsafe fn create_state(hwnd: HWND, settings: Settings, settings_path: PathBuf) -
         hwnd,
         ID_REMOVE,
     )?;
+    let startup_checkbox = control(
+        "BUTTON",
+        "Start with Windows",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+        0,
+        18,
+        535,
+        250,
+        26,
+        hwnd,
+        ID_STARTUP,
+    )?;
+    SendMessageW(
+        startup_checkbox,
+        BM_SETCHECK,
+        if settings.start_with_windows {
+            BST_CHECKED as usize
+        } else {
+            BST_UNCHECKED as usize
+        },
+        0,
+    );
 
     Ok(AppState {
         hwnd,
@@ -296,6 +330,7 @@ unsafe fn create_state(hwnd: HWND, settings: Settings, settings_path: PathBuf) -
         identity_edit,
         target_combo,
         managed_list,
+        startup_checkbox,
         available: Vec::new(),
         settings,
         settings_path,
@@ -446,7 +481,58 @@ unsafe fn handle_command(state: &mut AppState, wparam: WPARAM) {
         (ID_REFRESH, BN_CLICKED) => refresh_available(state),
         (ID_ADD, BN_CLICKED) => add_managed(state),
         (ID_REMOVE, BN_CLICKED) => remove_managed(state),
+        (ID_STARTUP, BN_CLICKED) => change_startup(state),
         _ => {}
+    }
+}
+
+unsafe fn change_startup(state: &mut AppState) {
+    let enabled = SendMessageW(state.startup_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED as isize;
+    if let Err(error) = configure_startup(enabled) {
+        SendMessageW(
+            state.startup_checkbox,
+            BM_SETCHECK,
+            if state.settings.start_with_windows {
+                BST_CHECKED as usize
+            } else {
+                BST_UNCHECKED as usize
+            },
+            0,
+        );
+        show_error(&format!("Could not update Windows startup.\n\n{error}"));
+        return;
+    }
+    state.settings.start_with_windows = enabled;
+    save_settings(state);
+}
+
+fn configure_startup(enabled: bool) -> Result<()> {
+    let mut command = Command::new("schtasks.exe");
+    command.creation_flags(CREATE_NO_WINDOW);
+    if enabled {
+        let executable = std::env::current_exe()?;
+        let task_command = format!("\"{}\" --minimized", executable.display());
+        command.args([
+            "/Create",
+            "/TN",
+            STARTUP_TASK_NAME,
+            "/TR",
+            &task_command,
+            "/SC",
+            "ONLOGON",
+            "/RL",
+            "HIGHEST",
+            "/IT",
+            "/F",
+        ]);
+    } else {
+        command.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
+    }
+    let status = command.status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("schtasks.exe exited with {status}").into())
     }
 }
 

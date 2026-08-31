@@ -10,6 +10,7 @@ LockMeWindow requests administrator access at startup so it can inspect and cont
 2. Select a running application or enter an executable name/full path.
 3. Choose `Window` or `Monitor`, then select `Add`.
 4. Use `Refresh` to rescan running applications.
+5. Enable `Start with Windows` to launch LockMeWindow in the tray when you sign in.
 
 Settings are saved immediately to `%APPDATA%\LockMeWindow\settings.json`. Minimize or close the window to send it to the system tray; left-click the tray icon to restore it or right-click and choose **Exit** to unlock the cursor and quit.
 
