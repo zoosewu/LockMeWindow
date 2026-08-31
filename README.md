@@ -12,7 +12,7 @@ LockMeWindow requests administrator access at startup so it can inspect and cont
 4. Use `Refresh` to rescan running applications.
 5. Enable `Start with Windows` to launch LockMeWindow in the tray when you sign in.
 
-Settings are saved immediately to `%APPDATA%\LockMeWindow\settings.json`. Minimize or close the window to send it to the system tray; left-click the tray icon to restore it or right-click and choose **Exit** to unlock the cursor and quit.
+Settings are saved immediately to `%APPDATA%\LockMeWindow\settings.json`. The tray icon remains visible while LockMeWindow is running. Minimize or close the window to hide it; left-click the tray icon to restore it or right-click and choose **Exit** to unlock the cursor and quit.
 
 Only one instance can run at a time. Launching it again restores the existing window from the tray.
 

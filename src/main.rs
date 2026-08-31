@@ -195,6 +195,10 @@ unsafe fn run_message_loop(start_minimized: bool) -> Result<()> {
         DestroyWindow(hwnd);
         return Err(std::io::Error::last_os_error().into());
     }
+    if !ensure_tray_icon(&mut *state_ptr) {
+        DestroyWindow(hwnd);
+        return Err(std::io::Error::other("Could not create the system tray icon.").into());
+    }
 
     if start_minimized {
         minimize_to_tray(&mut *state_ptr);
@@ -856,22 +860,29 @@ unsafe extern "system" fn win_event_proc(
 }
 
 unsafe fn minimize_to_tray(state: &mut AppState) {
-    if !state.tray_visible {
-        let data = tray_data(state.hwnd);
-        if Shell_NotifyIconW(NIM_ADD, &data) == 0 {
-            show_error("Could not create the system tray icon.");
-            ShowWindow(state.hwnd, SW_RESTORE);
-            return;
-        }
-        state.tray_visible = true;
+    if !ensure_tray_icon(state) {
+        show_error("Could not create the system tray icon.");
+        ShowWindow(state.hwnd, SW_RESTORE);
+        return;
     }
     ShowWindow(state.hwnd, SW_HIDE);
 }
 
 unsafe fn restore_from_tray(state: &mut AppState) {
-    remove_tray(state);
     ShowWindow(state.hwnd, SW_RESTORE);
     SetForegroundWindow(state.hwnd);
+}
+
+unsafe fn ensure_tray_icon(state: &mut AppState) -> bool {
+    if state.tray_visible {
+        return true;
+    }
+    let data = tray_data(state.hwnd);
+    if Shell_NotifyIconW(NIM_ADD, &data) == 0 {
+        return false;
+    }
+    state.tray_visible = true;
+    true
 }
 
 unsafe fn show_tray_menu(state: &mut AppState) {
@@ -899,14 +910,6 @@ unsafe fn show_tray_menu(state: &mut AppState) {
         }
     }
     DestroyMenu(menu);
-}
-
-unsafe fn remove_tray(state: &mut AppState) {
-    if state.tray_visible {
-        let data = tray_data(state.hwnd);
-        Shell_NotifyIconW(NIM_DELETE, &data);
-        state.tray_visible = false;
-    }
 }
 
 unsafe fn tray_data(hwnd: HWND) -> NOTIFYICONDATAW {
