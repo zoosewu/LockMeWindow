@@ -12,7 +12,7 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use windows_sys::Win32::Foundation::{
     CloseHandle, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
@@ -54,6 +54,7 @@ const RECONCILE_TIMER: usize = 1;
 const RECONCILE_INTERVAL_MS: u32 = 16;
 
 static MAIN_WINDOW: AtomicIsize = AtomicIsize::new(0);
+static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone)]
 struct ProcessChoice {
@@ -128,6 +129,11 @@ unsafe fn run_message_loop(start_minimized: bool) -> Result<()> {
     if instance.is_null() {
         return Err(std::io::Error::last_os_error().into());
     }
+    let taskbar_created = RegisterWindowMessageW(wide("TaskbarCreated").as_ptr());
+    if taskbar_created == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    TASKBAR_CREATED.store(taskbar_created, Ordering::Release);
 
     let class_name = wide(WINDOW_CLASS);
     let class = WNDCLASSW {
@@ -195,10 +201,7 @@ unsafe fn run_message_loop(start_minimized: bool) -> Result<()> {
         DestroyWindow(hwnd);
         return Err(std::io::Error::last_os_error().into());
     }
-    if !ensure_tray_icon(&mut *state_ptr) {
-        DestroyWindow(hwnd);
-        return Err(std::io::Error::other("Could not create the system tray icon.").into());
-    }
+    ensure_tray_icon(&mut *state_ptr);
 
     if start_minimized {
         minimize_to_tray(&mut *state_ptr);
@@ -457,6 +460,13 @@ unsafe extern "system" fn window_proc(
         WM_SHOW_EXISTING => {
             if let Some(state) = state(hwnd) {
                 restore_from_tray(state);
+            }
+            0
+        }
+        message if message == TASKBAR_CREATED.load(Ordering::Acquire) => {
+            if let Some(state) = state(hwnd) {
+                state.tray_visible = false;
+                ensure_tray_icon(state);
             }
             0
         }
@@ -860,11 +870,7 @@ unsafe extern "system" fn win_event_proc(
 }
 
 unsafe fn minimize_to_tray(state: &mut AppState) {
-    if !ensure_tray_icon(state) {
-        show_error("Could not create the system tray icon.");
-        ShowWindow(state.hwnd, SW_RESTORE);
-        return;
-    }
+    ensure_tray_icon(state);
     ShowWindow(state.hwnd, SW_HIDE);
 }
 
