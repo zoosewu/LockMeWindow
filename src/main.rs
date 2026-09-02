@@ -167,6 +167,10 @@ unsafe fn run_message_loop(start_minimized: bool) -> Result<()> {
     if hwnd.is_null() {
         return Err(std::io::Error::last_os_error().into());
     }
+    if ChangeWindowMessageFilterEx(hwnd, taskbar_created, MSGFLT_ALLOW, null_mut()) == 0 {
+        DestroyWindow(hwnd);
+        return Err(std::io::Error::last_os_error().into());
+    }
 
     let path = settings_path()?;
     let settings = Settings::load_from(&path).unwrap_or_else(|error| {
