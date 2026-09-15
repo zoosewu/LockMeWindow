@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/zoosewu/LockMeWindow/compare/v0.1.1...v0.2.0) (2026-09-15)
+
+
+### Added
+
+* redesign UI with Slint, import/export and config folder ([3be0386](https://github.com/zoosewu/LockMeWindow/commit/3be0386bbaefa38adec6314d1fd612623f54e961))
+
 ## [0.1.1](https://github.com/zoosewu/LockMeWindow/compare/v0.1.0...v0.1.1) (2026-09-15)
 
 
