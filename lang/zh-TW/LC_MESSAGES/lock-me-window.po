@@ -1,0 +1,143 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: lock-me-window\n"
+"Language: zh_TW\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Monitor"
+msgstr "螢幕"
+
+msgid "Window"
+msgstr "視窗"
+
+msgid "Could not load settings. Using defaults.\n\n{}"
+msgstr "無法載入設定，將使用預設值。\n\n{}"
+
+msgid "Could not use the config folder. Using the default folder for this session.\n\n{}"
+msgstr "無法使用設定資料夾，本次改用預設資料夾。\n\n{}"
+
+msgid "Could not save settings.\n\n{}"
+msgstr "無法儲存設定。\n\n{}"
+
+msgid "Could not refresh running applications.\n\n{}"
+msgstr "無法重新整理執行中的應用程式。\n\n{}"
+
+msgid "Could not update Windows startup.\n\n{}"
+msgstr "無法更新 Windows 開機啟動設定。\n\n{}"
+
+msgid "Could not import settings.\n\n{}"
+msgstr "無法匯入設定。\n\n{}"
+
+msgid "Could not export settings.\n\n{}"
+msgstr "無法匯出設定。\n\n{}"
+
+msgid "Could not change the config folder.\n\n{}"
+msgstr "無法變更設定資料夾。\n\n{}"
+
+msgid "Enter an executable name or select a running application."
+msgstr "請輸入執行檔名稱，或選擇執行中的應用程式。"
+
+msgid "That application is already configured."
+msgstr "這個應用程式已經設定過了。"
+
+msgid "Save changes to {}?"
+msgstr "要儲存對 {} 的變更嗎？"
+
+msgid "Remove {}?"
+msgstr "要移除 {} 嗎？"
+
+msgid "Replace all current settings with the settings from {}?"
+msgstr "要以 {} 的設定取代目前所有設定嗎？"
+
+msgid "{} already contains settings. Load them, or overwrite them with the current settings?"
+msgstr "{} 已經有設定檔。要載入該設定，還是以目前的設定覆寫？"
+
+msgid "Save"
+msgstr "儲存"
+
+msgid "Remove"
+msgstr "移除"
+
+msgid "Import"
+msgstr "匯入"
+
+msgid "Load"
+msgstr "載入"
+
+msgid "OK"
+msgstr "確定"
+
+msgid "Applications"
+msgstr "應用程式"
+
+msgid "Application"
+msgstr "應用程式"
+
+msgid "Target"
+msgstr "鎖定範圍"
+
+msgid "Add…"
+msgstr "新增…"
+
+msgid "Edit…"
+msgstr "編輯…"
+
+msgid "Settings"
+msgstr "設定"
+
+msgid "Start with Windows"
+msgstr "開機時啟動"
+
+msgid "Config folder"
+msgstr "設定資料夾"
+
+msgid "Change…"
+msgstr "變更…"
+
+msgid "Reset to default"
+msgstr "還原預設值"
+
+msgid "Import or export all settings as a JSON file."
+msgstr "以 JSON 檔匯入或匯出所有設定。"
+
+msgid "Import…"
+msgstr "匯入…"
+
+msgid "Export…"
+msgstr "匯出…"
+
+msgid "Cursor: locked to {}"
+msgstr "游標：已鎖定於 {}"
+
+msgid "Cursor: unlocked"
+msgstr "游標：未鎖定"
+
+msgid "Edit application"
+msgstr "編輯應用程式"
+
+msgid "Add application"
+msgstr "新增應用程式"
+
+msgid "Running applications"
+msgstr "執行中的應用程式"
+
+msgid "Refresh"
+msgstr "重新整理"
+
+msgid "Executable name or full path"
+msgstr "執行檔名稱或完整路徑"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Overwrite"
+msgstr "覆寫"
+
+msgid "Show"
+msgstr "顯示"
+
+msgid "Exit"
+msgstr "結束"

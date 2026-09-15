@@ -1,0 +1,27 @@
+export component Tray inherits SystemTrayIcon {
+    icon: @image-url("../assets/lock-me-window.png");
+    tooltip: "LockMeWindow";
+
+    callback show-window();
+    callback exit();
+
+    clicked => {
+        root.show-window();
+    }
+
+    Menu {
+        MenuItem {
+            title: @tr("Show");
+            activated => {
+                root.show-window();
+            }
+        }
+
+        MenuItem {
+            title: @tr("Exit");
+            activated => {
+                root.exit();
+            }
+        }
+    }
+}

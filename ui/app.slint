@@ -1,0 +1,433 @@
+import {
+    Button,
+    CheckBox,
+    ComboBox,
+    LineEdit,
+    Palette,
+    StandardListView,
+    StandardTableView,
+    TabWidget,
+} from "std-widgets.slint";
+import { Tray } from "tray.slint";
+
+export { Tray }
+
+export enum PromptKind {
+    closed,
+    load-failed,
+    location-failed,
+    save-failed,
+    refresh-failed,
+    startup-failed,
+    import-failed,
+    export-failed,
+    relocate-failed,
+    identity-empty,
+    identity-duplicate,
+    confirm-edit,
+    confirm-remove,
+    confirm-import,
+    config-exists,
+}
+
+export global Texts {
+    public pure function target-name(target: int) -> string {
+        return target == 1 ? @tr("Monitor") : @tr("Window");
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "LockMeWindow";
+    icon: @image-url("../assets/lock-me-window.png");
+    preferred-width: 780px;
+    preferred-height: 560px;
+    min-width: 560px;
+    min-height: 420px;
+
+    in property <[[StandardListViewItem]]> managed-rows;
+    in-out property <int> managed-current: -1;
+    in property <bool> locked;
+    in property <string> locked-identity;
+    in-out property <bool> start-with-windows;
+    in property <string> config-folder;
+    in property <bool> config-folder-custom;
+
+    in-out property <bool> editor-open;
+    in property <bool> editor-editing;
+    in-out property <string> editor-identity;
+    in-out property <int> editor-target;
+    in property <[StandardListViewItem]> running-apps;
+    in-out property <int> running-current: -1;
+
+    in-out property <PromptKind> prompt: PromptKind.closed;
+    in property <string> prompt-detail;
+
+    callback add-clicked();
+    callback edit-clicked(row: int);
+    callback remove-clicked(row: int);
+    callback running-selected(index: int);
+    callback refresh-running();
+    callback editor-saved();
+    callback prompt-accepted(kind: PromptKind);
+    callback prompt-alternate(kind: PromptKind);
+    callback prompt-canceled(kind: PromptKind);
+    callback start-with-windows-toggled(enabled: bool);
+    callback change-config-folder();
+    callback reset-config-folder();
+    callback import-settings();
+    callback export-settings();
+
+    pure function prompt-message(kind: PromptKind, detail: string) -> string {
+        if kind == PromptKind.load-failed {
+            return @tr("Could not load settings. Using defaults.\n\n{}", detail);
+        }
+        if kind == PromptKind.location-failed {
+            return @tr("Could not use the config folder. Using the default folder for this session.\n\n{}", detail);
+        }
+        if kind == PromptKind.save-failed {
+            return @tr("Could not save settings.\n\n{}", detail);
+        }
+        if kind == PromptKind.refresh-failed {
+            return @tr("Could not refresh running applications.\n\n{}", detail);
+        }
+        if kind == PromptKind.startup-failed {
+            return @tr("Could not update Windows startup.\n\n{}", detail);
+        }
+        if kind == PromptKind.import-failed {
+            return @tr("Could not import settings.\n\n{}", detail);
+        }
+        if kind == PromptKind.export-failed {
+            return @tr("Could not export settings.\n\n{}", detail);
+        }
+        if kind == PromptKind.relocate-failed {
+            return @tr("Could not change the config folder.\n\n{}", detail);
+        }
+        if kind == PromptKind.identity-empty {
+            return @tr("Enter an executable name or select a running application.");
+        }
+        if kind == PromptKind.identity-duplicate {
+            return @tr("That application is already configured.");
+        }
+        if kind == PromptKind.confirm-edit {
+            return @tr("Save changes to {}?", detail);
+        }
+        if kind == PromptKind.confirm-remove {
+            return @tr("Remove {}?", detail);
+        }
+        if kind == PromptKind.confirm-import {
+            return @tr("Replace all current settings with the settings from {}?", detail);
+        }
+        if kind == PromptKind.config-exists {
+            return @tr("{} already contains settings. Load them, or overwrite them with the current settings?", detail);
+        }
+        return "";
+    }
+
+    pure function prompt-accept-text(kind: PromptKind) -> string {
+        if kind == PromptKind.confirm-edit {
+            return @tr("Save");
+        }
+        if kind == PromptKind.confirm-remove {
+            return @tr("Remove");
+        }
+        if kind == PromptKind.confirm-import {
+            return @tr("Import");
+        }
+        if kind == PromptKind.config-exists {
+            return @tr("Load");
+        }
+        return @tr("OK");
+    }
+
+    pure function prompt-is-question(kind: PromptKind) -> bool {
+        return kind == PromptKind.confirm-edit || kind == PromptKind.confirm-remove || kind == PromptKind.confirm-import || kind == PromptKind.config-exists;
+    }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+
+        TabWidget {
+            vertical-stretch: 1;
+
+            Tab {
+                title: @tr("Applications");
+
+                HorizontalLayout {
+                    padding: 12px;
+                    spacing: 12px;
+
+                    StandardTableView {
+                        horizontal-stretch: 1;
+                        columns: [
+                            { title: @tr("Application"), horizontal-stretch: 1 },
+                            { title: @tr("Target"), min-width: 120px },
+                        ];
+                        rows: root.managed-rows;
+                        current-row <=> root.managed-current;
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        Button {
+                            text: @tr("Add…");
+                            clicked => {
+                                root.add-clicked();
+                            }
+                        }
+
+                        Button {
+                            text: @tr("Edit…");
+                            enabled: root.managed-current >= 0;
+                            clicked => {
+                                root.edit-clicked(root.managed-current);
+                            }
+                        }
+
+                        Button {
+                            text: @tr("Remove");
+                            enabled: root.managed-current >= 0;
+                            clicked => {
+                                root.remove-clicked(root.managed-current);
+                            }
+                        }
+                    }
+                }
+            }
+
+            Tab {
+                title: @tr("Settings");
+
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 12px;
+                    alignment: start;
+
+                    CheckBox {
+                        text: @tr("Start with Windows");
+                        checked <=> root.start-with-windows;
+                        toggled => {
+                            root.start-with-windows-toggled(self.checked);
+                        }
+                    }
+
+                    Text {
+                        text: @tr("Config folder");
+                        color: Palette.foreground;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+
+                        LineEdit {
+                            horizontal-stretch: 1;
+                            read-only: true;
+                            text: root.config-folder;
+                        }
+
+                        Button {
+                            text: @tr("Change…");
+                            clicked => {
+                                root.change-config-folder();
+                            }
+                        }
+
+                        Button {
+                            text: @tr("Reset to default");
+                            enabled: root.config-folder-custom;
+                            clicked => {
+                                root.reset-config-folder();
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("Import or export all settings as a JSON file.");
+                        color: Palette.foreground;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        Button {
+                            text: @tr("Import…");
+                            clicked => {
+                                root.import-settings();
+                            }
+                        }
+
+                        Button {
+                            text: @tr("Export…");
+                            clicked => {
+                                root.export-settings();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: root.locked ? @tr("Cursor: locked to {}", root.locked-identity) : @tr("Cursor: unlocked");
+            color: Palette.foreground;
+            overflow: elide;
+        }
+    }
+
+    if root.editor-open: Rectangle {
+        background: #00000080;
+
+        TouchArea {
+            scroll-event(event) => {
+                return EventResult.accept;
+            }
+        }
+
+        Rectangle {
+            width: min(parent.width - 48px, 680px);
+            height: min(parent.height - 48px, 520px);
+            background: Palette.background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 8px;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 8px;
+
+                Text {
+                    text: root.editor-editing ? @tr("Edit application") : @tr("Add application");
+                    color: Palette.foreground;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    Text {
+                        text: @tr("Running applications");
+                        color: Palette.foreground;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    Button {
+                        text: @tr("Refresh");
+                        clicked => {
+                            root.refresh-running();
+                        }
+                    }
+                }
+
+                StandardListView {
+                    vertical-stretch: 1;
+                    model: root.running-apps;
+                    current-item <=> root.running-current;
+                    current-item-changed(index) => {
+                        root.running-selected(index);
+                    }
+                }
+
+                Text {
+                    text: @tr("Executable name or full path");
+                    color: Palette.foreground;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        text <=> root.editor-identity;
+                    }
+
+                    ComboBox {
+                        model: [@tr("Window"), @tr("Monitor")];
+                        current-index <=> root.editor-target;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: @tr("Save");
+                        primary: true;
+                        clicked => {
+                            root.editor-saved();
+                        }
+                    }
+
+                    Button {
+                        text: @tr("Cancel");
+                        clicked => {
+                            root.editor-open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.prompt != PromptKind.closed: Rectangle {
+        background: #00000080;
+
+        TouchArea {
+            scroll-event(event) => {
+                return EventResult.accept;
+            }
+        }
+
+        Rectangle {
+            width: min(parent.width - 48px, 460px);
+            height: prompt-layout.preferred-height;
+            background: Palette.background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 8px;
+
+            prompt-layout := VerticalLayout {
+                padding: 16px;
+                spacing: 16px;
+
+                Text {
+                    text: root.prompt-message(root.prompt, root.prompt-detail);
+                    color: Palette.foreground;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Button {
+                        text: root.prompt-accept-text(root.prompt);
+                        primary: true;
+                        clicked => {
+                            root.prompt-accepted(root.prompt);
+                        }
+                    }
+
+                    if root.prompt == PromptKind.config-exists: Button {
+                        text: @tr("Overwrite");
+                        clicked => {
+                            root.prompt-alternate(root.prompt);
+                        }
+                    }
+
+                    if root.prompt-is-question(root.prompt): Button {
+                        text: @tr("Cancel");
+                        clicked => {
+                            root.prompt-canceled(root.prompt);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

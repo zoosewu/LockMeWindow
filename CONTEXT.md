@@ -15,3 +15,7 @@ The active restriction that keeps the cursor inside a lock target. It is removed
 ## Lock target
 
 The boundary used by a cursor lock: either the foreground application window or the monitor containing it.
+
+## Config folder
+
+The folder that holds `settings.json`. It is `%APPDATA%\LockMeWindow` unless a custom folder is chosen; that choice is recorded in `location.json` in the default folder.

@@ -1,3 +1,4 @@
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::mem::zeroed;
@@ -6,12 +7,14 @@ use std::path::{Path, PathBuf};
 use std::ptr::null;
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, GetLastError, HANDLE,
-    RECT, SetLastError,
+    RECT, SetLastError, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::System::Registry::{
     HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW,
 };
-use windows_sys::Win32::System::Threading::CreateMutexW;
+use windows_sys::Win32::System::Threading::{
+    CreateEventW, CreateMutexW, SetEvent, WaitForSingleObject,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -74,25 +77,57 @@ pub struct Settings {
 
 impl Settings {
     pub fn load_from(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+        load_json(path)
     }
 
     pub fn save_to(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
-        Ok(())
+        save_json(path, self)
     }
 }
 
-pub fn settings_path() -> Result<PathBuf> {
-    Ok(PathBuf::from(std::env::var("APPDATA")?)
-        .join("LockMeWindow")
-        .join("settings.json"))
+pub const SETTINGS_FILE_NAME: &str = "settings.json";
+pub const LOCATION_FILE_NAME: &str = "location.json";
+
+pub fn default_config_dir() -> Result<PathBuf> {
+    Ok(PathBuf::from(std::env::var("APPDATA")?).join("LockMeWindow"))
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ConfigLocation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<PathBuf>,
+}
+
+impl ConfigLocation {
+    pub fn load_from(path: &Path) -> Result<Self> {
+        load_json(path)
+    }
+
+    pub fn save_to(&self, path: &Path) -> Result<()> {
+        save_json(path, self)
+    }
+
+    pub fn settings_path(&self, default_dir: &Path) -> PathBuf {
+        self.directory
+            .as_deref()
+            .unwrap_or(default_dir)
+            .join(SETTINGS_FILE_NAME)
+    }
+}
+
+fn load_json<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
+    if !path.exists() {
+        return Ok(T::default());
+    }
+    Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+}
+
+fn save_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, serde_json::to_vec_pretty(value)?)?;
+    Ok(())
 }
 
 pub fn ensure_cursor_clip(expected: RECT) -> bool {
@@ -164,6 +199,41 @@ pub fn claim_single_instance(name: &str) -> Result<Option<SingleInstance>> {
         } else {
             Ok(Some(SingleInstance(handle)))
         }
+    }
+}
+
+pub struct NamedEvent(HANDLE);
+
+// Event handles can be used from any thread.
+unsafe impl Send for NamedEvent {}
+
+impl Drop for NamedEvent {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
+impl NamedEvent {
+    pub fn open_or_create(name: &str) -> Result<Self> {
+        let name = wide(name);
+        let handle = unsafe { CreateEventW(null(), 0, 0, name.as_ptr()) };
+        if handle.is_null() {
+            Err(std::io::Error::last_os_error().into())
+        } else {
+            Ok(Self(handle))
+        }
+    }
+
+    pub fn signal(&self) -> Result<()> {
+        if unsafe { SetEvent(self.0) } == 0 {
+            Err(std::io::Error::last_os_error().into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn wait(&self, timeout_ms: u32) -> bool {
+        unsafe { WaitForSingleObject(self.0, timeout_ms) == WAIT_OBJECT_0 }
     }
 }
 
@@ -270,6 +340,40 @@ mod tests {
     }
 
     #[test]
+    fn config_location_uses_default_directory_until_customized() {
+        let default_dir = Path::new(r"C:\Users\me\AppData\Roaming\LockMeWindow");
+        let mut location = ConfigLocation::default();
+        assert_eq!(
+            location.settings_path(default_dir),
+            default_dir.join(SETTINGS_FILE_NAME)
+        );
+
+        location.directory = Some(PathBuf::from(r"D:\Sync\LockMeWindow"));
+        assert_eq!(
+            location.settings_path(default_dir),
+            Path::new(r"D:\Sync\LockMeWindow\settings.json")
+        );
+    }
+
+    #[test]
+    fn config_location_round_trips_and_defaults_when_missing() {
+        let dir =
+            std::env::temp_dir().join(format!("lock-me-window-location-{}", std::process::id()));
+        let path = dir.join(LOCATION_FILE_NAME);
+        assert_eq!(
+            ConfigLocation::load_from(&path).unwrap(),
+            ConfigLocation::default()
+        );
+
+        let location = ConfigLocation {
+            directory: Some(PathBuf::from(r"D:\Sync\LockMeWindow")),
+        };
+        location.save_to(&path).unwrap();
+        assert_eq!(ConfigLocation::load_from(&path).unwrap(), location);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn startup_command_quotes_executable_and_starts_minimized() {
         assert_eq!(
             startup_command(Path::new(
@@ -294,6 +398,18 @@ mod tests {
         set_user_registry_string(&subkey, "Startup", None).unwrap();
         assert_eq!(user_registry_string(&subkey, "Startup"), None);
         set_user_registry_string(&subkey, "Startup", None).unwrap();
+    }
+
+    #[test]
+    fn named_event_wakes_another_handle_once() {
+        let name = format!(r"Local\LockMeWindow.TestEvent.{}", std::process::id());
+        let waiter = NamedEvent::open_or_create(&name).unwrap();
+        let sender = NamedEvent::open_or_create(&name).unwrap();
+        assert!(!waiter.wait(0));
+
+        sender.signal().unwrap();
+        assert!(waiter.wait(1000));
+        assert!(!waiter.wait(0));
     }
 
     #[test]
