@@ -4,6 +4,14 @@ A small Windows 10/11 x64 utility that confines the cursor while a configured ap
 
 LockMeWindow requests administrator access at startup so it can inspect and control elevated games. Windows will show a UAC prompt on every launch.
 
+## Download
+
+Download `lock-me-window.exe` from the [latest release](https://github.com/zoosewu/LockMeWindow/releases/latest). To verify it, compare the output below with `lock-me-window.exe.sha256` from the same release:
+
+```powershell
+(Get-FileHash .\lock-me-window.exe -Algorithm SHA256).Hash
+```
+
 ## Use
 
 1. Launch `lock-me-window.exe`.
