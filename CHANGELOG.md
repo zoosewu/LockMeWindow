@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/zoosewu/LockMeWindow/compare/v0.1.0...v0.1.1) (2026-09-15)
+
+
+### Fixed
+
+* start with Windows without administrator rights ([237ce56](https://github.com/zoosewu/LockMeWindow/commit/237ce566de10e0f37cd5e076cb3c7c9087658420))
+
 ## 0.1.0 (2026-09-15)
 
 
