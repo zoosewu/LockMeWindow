@@ -3,14 +3,12 @@
 
 use lock_me_window::{
     LockTarget, ManagedApplication, Result, Settings, claim_single_instance, ensure_cursor_clip,
-    settings_path,
+    set_user_registry_string, settings_path, startup_command,
 };
 use std::ffi::{OsStr, OsString};
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use windows_sys::Win32::Foundation::{
@@ -25,8 +23,7 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, GetCurrentProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    QueryFullProcessImageNameW,
+    GetCurrentProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
@@ -44,7 +41,8 @@ const ID_MANAGED: usize = 105;
 const ID_REMOVE: usize = 106;
 const ID_EXIT: usize = 107;
 const ID_STARTUP: usize = 108;
-const STARTUP_TASK_NAME: &str = "LockMeWindow Startup";
+const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+const RUN_VALUE: &str = "LockMeWindow";
 const WINDOW_CLASS: &str = "LockMeWindow.Main";
 const INSTANCE_MUTEX: &str = r"Local\LockMeWindow.SingleInstance";
 const WM_FOREGROUND_CHANGED: u32 = WM_APP + 1;
@@ -549,33 +547,12 @@ unsafe fn change_startup(state: &mut AppState) {
 }
 
 fn configure_startup(enabled: bool) -> Result<()> {
-    let mut command = Command::new("schtasks.exe");
-    command.creation_flags(CREATE_NO_WINDOW);
-    if enabled {
-        let executable = std::env::current_exe()?;
-        let task_command = format!("\"{}\" --minimized", executable.display());
-        command.args([
-            "/Create",
-            "/TN",
-            STARTUP_TASK_NAME,
-            "/TR",
-            &task_command,
-            "/SC",
-            "ONLOGON",
-            "/RL",
-            "HIGHEST",
-            "/IT",
-            "/F",
-        ]);
+    let command = if enabled {
+        Some(startup_command(&std::env::current_exe()?))
     } else {
-        command.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
-    }
-    let status = command.status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("schtasks.exe exited with {status}").into())
-    }
+        None
+    };
+    set_user_registry_string(RUN_KEY, RUN_VALUE, command.as_deref())
 }
 
 unsafe fn select_available(state: &mut AppState) {

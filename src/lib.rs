@@ -5,7 +5,11 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::null;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_SUCCESS, GetLastError, HANDLE, RECT, SetLastError,
+    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, GetLastError, HANDLE,
+    RECT, SetLastError,
+};
+use windows_sys::Win32::System::Registry::{
+    HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW,
 };
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor};
@@ -101,6 +105,43 @@ pub fn ensure_cursor_clip(expected: RECT) -> bool {
     }
 }
 
+pub fn startup_command(executable: &Path) -> String {
+    format!("\"{}\" --minimized", executable.display())
+}
+
+pub fn set_user_registry_string(subkey: &str, name: &str, value: Option<&str>) -> Result<()> {
+    let subkey = wide(subkey);
+    let name = wide(name);
+    let status = unsafe {
+        match value {
+            Some(value) => {
+                let data = wide(value);
+                RegSetKeyValueW(
+                    HKEY_CURRENT_USER,
+                    subkey.as_ptr(),
+                    name.as_ptr(),
+                    REG_SZ,
+                    data.as_ptr().cast(),
+                    size_of_val(data.as_slice()) as u32,
+                )
+            }
+            None => match RegDeleteKeyValueW(HKEY_CURRENT_USER, subkey.as_ptr(), name.as_ptr()) {
+                ERROR_FILE_NOT_FOUND => ERROR_SUCCESS,
+                status => status,
+            },
+        }
+    };
+    if status == ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(std::io::Error::from_raw_os_error(status as i32).into())
+    }
+}
+
+fn wide(value: &str) -> Vec<u16> {
+    OsStr::new(value).encode_wide().chain(Some(0)).collect()
+}
+
 pub struct SingleInstance(HANDLE);
 
 impl Drop for SingleInstance {
@@ -137,8 +178,9 @@ fn same_rect(left: RECT, right: RECT) -> bool {
 mod tests {
     use super::*;
     use std::mem::zeroed;
-    use std::ptr::null;
+    use std::ptr::{null, null_mut};
     use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::System::Registry::{RRF_RT_REG_SZ, RegDeleteTreeW, RegGetValueW};
     use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor, GetCursorPos};
 
     struct RestoreClip(RECT);
@@ -147,6 +189,34 @@ mod tests {
         fn drop(&mut self) {
             unsafe { ClipCursor(&self.0) };
         }
+    }
+
+    struct DeleteTestKey(String);
+
+    impl Drop for DeleteTestKey {
+        fn drop(&mut self) {
+            unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, wide(&self.0).as_ptr()) };
+        }
+    }
+
+    fn user_registry_string(subkey: &str, name: &str) -> Option<String> {
+        let subkey = wide(subkey);
+        let name = wide(name);
+        let mut buffer = [0u16; 512];
+        let mut size = size_of_val(&buffer) as u32;
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                subkey.as_ptr(),
+                name.as_ptr(),
+                RRF_RT_REG_SZ,
+                null_mut(),
+                buffer.as_mut_ptr().cast(),
+                &mut size,
+            )
+        };
+        (status == ERROR_SUCCESS)
+            .then(|| String::from_utf16(&buffer[..size as usize / 2 - 1]).unwrap())
     }
 
     #[test]
@@ -197,6 +267,33 @@ mod tests {
     fn old_settings_default_startup_to_off() {
         let settings: Settings = serde_json::from_str(r#"{"apps":[]}"#).unwrap();
         assert!(!settings.start_with_windows);
+    }
+
+    #[test]
+    fn startup_command_quotes_executable_and_starts_minimized() {
+        assert_eq!(
+            startup_command(Path::new(
+                r"C:\Program Files\LockMeWindow\lock-me-window.exe"
+            )),
+            r#""C:\Program Files\LockMeWindow\lock-me-window.exe" --minimized"#
+        );
+    }
+
+    #[test]
+    fn user_registry_string_is_set_and_deleted() {
+        let subkey = format!(r"Software\LockMeWindow.Test.{}", std::process::id());
+        let _cleanup = DeleteTestKey(subkey.clone());
+        let command = r#""C:\Tools\lock-me-window.exe" --minimized"#;
+
+        set_user_registry_string(&subkey, "Startup", Some(command)).unwrap();
+        assert_eq!(
+            user_registry_string(&subkey, "Startup").as_deref(),
+            Some(command)
+        );
+
+        set_user_registry_string(&subkey, "Startup", None).unwrap();
+        assert_eq!(user_registry_string(&subkey, "Startup"), None);
+        set_user_registry_string(&subkey, "Startup", None).unwrap();
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 A small Windows 10/11 x64 utility that confines the cursor while a configured application is in the foreground.
 
-LockMeWindow requests administrator access at startup so it can inspect and control elevated games. Windows will show a UAC prompt on every launch.
+LockMeWindow runs without administrator rights, including when the configured application runs as administrator.
 
 ## Download
 

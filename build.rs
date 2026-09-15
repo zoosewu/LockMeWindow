@@ -15,6 +15,6 @@ fn main() {
         manifest.display()
     );
     println!(
-        "cargo:rustc-link-arg-bin=lock-me-window=/MANIFESTUAC:level='requireAdministrator' uiAccess='false'"
+        "cargo:rustc-link-arg-bin=lock-me-window=/MANIFESTUAC:level='asInvoker' uiAccess='false'"
     );
 }
