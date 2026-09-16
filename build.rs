@@ -10,6 +10,15 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         winresource::WindowsResource::new()
             .set_icon("assets/lock-me-window.ico")
+            .set("ProductName", "LockMeWindow")
+            .set("FileDescription", "LockMeWindow")
+            .set("CompanyName", "zoosewu")
+            .set(
+                "LegalCopyright",
+                "Copyright (c) 2026 zoosewu. Based on AutoCursorLock, Copyright (c) 2020 James La Novara-Gsell. MIT License.",
+            )
+            .set("OriginalFilename", "lock-me-window.exe")
+            .set("InternalName", "lock-me-window")
             .compile()
             .unwrap();
     }
