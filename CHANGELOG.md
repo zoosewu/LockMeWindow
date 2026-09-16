@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/zoosewu/LockMeWindow/compare/v0.3.0...v0.3.1) (2026-09-16)
+
+
+### Internal
+
+* release 0.3.1 ([38ee9af](https://github.com/zoosewu/LockMeWindow/commit/38ee9af19aadf1a19e9f9d60c1d6149fa2b68a17))
+
 ## [0.3.0](https://github.com/zoosewu/LockMeWindow/compare/v0.2.0...v0.3.0) (2026-09-16)
 
 
