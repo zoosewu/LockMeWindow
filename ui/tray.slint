@@ -8,7 +8,7 @@ export component Tray inherits SystemTrayIcon {
     icon: root.light-taskbar
         ? (root.small-icon ? @image-url("../assets/tray-light-16.png") : @image-url("../assets/tray-light-32.png"))
         : (root.small-icon ? @image-url("../assets/tray-dark-16.png") : @image-url("../assets/tray-dark-32.png"));
-    tooltip: "LockMeWindow";
+    tooltip: "WindowWarden";
 
     callback show-window();
     callback exit();

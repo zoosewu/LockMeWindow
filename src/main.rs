@@ -5,14 +5,14 @@ mod app;
 mod lock;
 mod processes;
 
-use lock_me_window::{NamedEvent, Result, claim_single_instance};
 use std::ptr::null_mut;
+use window_warden::{NamedEvent, Result, claim_single_instance};
 use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
 
 slint::include_modules!();
 
-const INSTANCE_MUTEX: &str = r"Local\LockMeWindow.SingleInstance";
-const SHOW_EVENT: &str = r"Local\LockMeWindow.Show";
+const INSTANCE_MUTEX: &str = r"Local\WindowWarden.SingleInstance";
+const SHOW_EVENT: &str = r"Local\WindowWarden.Show";
 
 fn main() {
     if let Err(error) = run() {
@@ -34,7 +34,7 @@ fn run() -> Result<()> {
 
 fn show_error(text: &str) {
     let text: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
-    let title: Vec<u16> = "LockMeWindow".encode_utf16().chain(Some(0)).collect();
+    let title: Vec<u16> = "WindowWarden".encode_utf16().chain(Some(0)).collect();
     unsafe {
         MessageBoxW(
             null_mut(),

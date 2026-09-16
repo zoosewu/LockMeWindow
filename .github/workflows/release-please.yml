@@ -42,5 +42,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          sha256sum lock-me-window.exe > lock-me-window.exe.sha256
-          gh release upload "$TAG" lock-me-window.exe lock-me-window.exe.sha256 --repo "$GITHUB_REPOSITORY" --clobber
+          sha256sum window-warden.exe > window-warden.exe.sha256
+          gh release upload "$TAG" window-warden.exe window-warden.exe.sha256 --repo "$GITHUB_REPOSITORY" --clobber

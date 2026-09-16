@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the LockMeWindow icons.
+"""Draws the WindowWarden icons.
 
 The app icon is a rounded tile with a cursor inside corner brackets; the tray
 icons are separate pixel-aligned glyphs on a transparent background, one for a
@@ -242,9 +242,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     icons = {size: app_icon(size) for size in ICO_SIZES}
-    icons[256].save(out / "lock-me-window.ico", sizes=[(s, s) for s in ICO_SIZES],
+    icons[256].save(out / "window-warden.ico", sizes=[(s, s) for s in ICO_SIZES],
                     append_images=[icons[s] for s in ICO_SIZES if s != 256])
-    draw_app_icon(512).save(out / "lock-me-window.png")
+    draw_app_icon(512).save(out / "window-warden.png")
 
     for name, ink in (("light", (26, 26, 26, 255)), ("dark", (255, 255, 255, 255))):
         for size in (16, 32):

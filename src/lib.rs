@@ -145,7 +145,7 @@ pub const SETTINGS_FILE_NAME: &str = "settings.json";
 pub const LOCATION_FILE_NAME: &str = "location.json";
 
 pub fn default_config_dir() -> Result<PathBuf> {
-    Ok(PathBuf::from(std::env::var("APPDATA")?).join("LockMeWindow"))
+    Ok(PathBuf::from(std::env::var("APPDATA")?).join("WindowWarden"))
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -169,6 +169,24 @@ impl ConfigLocation {
             .unwrap_or(default_dir)
             .join(SETTINGS_FILE_NAME)
     }
+}
+
+// The app shipped as LockMeWindow before; carry that installation's files over
+// the first time it runs under the new name.
+pub fn migrate_config(legacy_dir: &Path, config_dir: &Path) -> Result<bool> {
+    let source = legacy_dir.join(SETTINGS_FILE_NAME);
+    let target = config_dir.join(SETTINGS_FILE_NAME);
+    if target.exists() || !source.exists() {
+        return Ok(false);
+    }
+
+    std::fs::create_dir_all(config_dir)?;
+    std::fs::copy(&source, &target)?;
+    let location = legacy_dir.join(LOCATION_FILE_NAME);
+    if location.exists() {
+        std::fs::copy(location, config_dir.join(LOCATION_FILE_NAME))?;
+    }
+    Ok(true)
 }
 
 fn load_json<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
@@ -395,7 +413,7 @@ mod tests {
     #[test]
     fn settings_round_trip_as_json() {
         let path = std::env::temp_dir().join(format!(
-            "lock-me-window-settings-{}.json",
+            "window-warden-settings-{}.json",
             std::process::id()
         ));
         let settings = Settings {
@@ -459,25 +477,50 @@ mod tests {
     }
 
     #[test]
+    fn config_migrates_once_from_the_legacy_folder() {
+        let root =
+            std::env::temp_dir().join(format!("window-warden-migrate-{}", std::process::id()));
+        let legacy = root.join("LockMeWindow");
+        let current = root.join("WindowWarden");
+        std::fs::create_dir_all(&legacy).unwrap();
+        Settings {
+            apps: Vec::new(),
+            start_with_windows: true,
+            language: Language::English,
+        }
+        .save_to(&legacy.join(SETTINGS_FILE_NAME))
+        .unwrap();
+
+        assert!(migrate_config(&legacy, &current).unwrap());
+        let moved = Settings::load_from(&current.join(SETTINGS_FILE_NAME)).unwrap();
+        assert!(moved.start_with_windows);
+        assert_eq!(moved.language, Language::English);
+
+        // A second run leaves the current settings alone.
+        assert!(!migrate_config(&legacy, &current).unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn config_location_uses_default_directory_until_customized() {
-        let default_dir = Path::new(r"C:\Users\me\AppData\Roaming\LockMeWindow");
+        let default_dir = Path::new(r"C:\Users\me\AppData\Roaming\WindowWarden");
         let mut location = ConfigLocation::default();
         assert_eq!(
             location.settings_path(default_dir),
             default_dir.join(SETTINGS_FILE_NAME)
         );
 
-        location.directory = Some(PathBuf::from(r"D:\Sync\LockMeWindow"));
+        location.directory = Some(PathBuf::from(r"D:\Sync\WindowWarden"));
         assert_eq!(
             location.settings_path(default_dir),
-            Path::new(r"D:\Sync\LockMeWindow\settings.json")
+            Path::new(r"D:\Sync\WindowWarden\settings.json")
         );
     }
 
     #[test]
     fn config_location_round_trips_and_defaults_when_missing() {
         let dir =
-            std::env::temp_dir().join(format!("lock-me-window-location-{}", std::process::id()));
+            std::env::temp_dir().join(format!("window-warden-location-{}", std::process::id()));
         let path = dir.join(LOCATION_FILE_NAME);
         assert_eq!(
             ConfigLocation::load_from(&path).unwrap(),
@@ -485,7 +528,7 @@ mod tests {
         );
 
         let location = ConfigLocation {
-            directory: Some(PathBuf::from(r"D:\Sync\LockMeWindow")),
+            directory: Some(PathBuf::from(r"D:\Sync\WindowWarden")),
         };
         location.save_to(&path).unwrap();
         assert_eq!(ConfigLocation::load_from(&path).unwrap(), location);
@@ -496,17 +539,17 @@ mod tests {
     fn startup_command_quotes_executable_and_starts_minimized() {
         assert_eq!(
             startup_command(Path::new(
-                r"C:\Program Files\LockMeWindow\lock-me-window.exe"
+                r"C:\Program Files\WindowWarden\window-warden.exe"
             )),
-            r#""C:\Program Files\LockMeWindow\lock-me-window.exe" --minimized"#
+            r#""C:\Program Files\WindowWarden\window-warden.exe" --minimized"#
         );
     }
 
     #[test]
     fn user_registry_string_is_set_and_deleted() {
-        let subkey = format!(r"Software\LockMeWindow.Test.{}", std::process::id());
+        let subkey = format!(r"Software\WindowWarden.Test.{}", std::process::id());
         let _cleanup = DeleteTestKey(subkey.clone());
-        let command = r#""C:\Tools\lock-me-window.exe" --minimized"#;
+        let command = r#""C:\Tools\window-warden.exe" --minimized"#;
 
         set_user_registry_string(&subkey, "Startup", Some(command)).unwrap();
         assert_eq!(
@@ -521,13 +564,13 @@ mod tests {
 
     #[test]
     fn missing_registry_dword_reads_as_none() {
-        let subkey = format!(r"Software\LockMeWindow.Test.{}", std::process::id());
+        let subkey = format!(r"Software\WindowWarden.Test.{}", std::process::id());
         assert_eq!(user_registry_dword(&subkey, "Missing"), None);
     }
 
     #[test]
     fn named_event_wakes_another_handle_once() {
-        let name = format!(r"Local\LockMeWindow.TestEvent.{}", std::process::id());
+        let name = format!(r"Local\WindowWarden.TestEvent.{}", std::process::id());
         let waiter = NamedEvent::open_or_create(&name).unwrap();
         let sender = NamedEvent::open_or_create(&name).unwrap();
         assert!(!waiter.wait(0));
@@ -539,7 +582,7 @@ mod tests {
 
     #[test]
     fn named_instance_is_exclusive_until_released() {
-        let name = format!(r"Local\LockMeWindow.Test.{}", std::process::id());
+        let name = format!(r"Local\WindowWarden.Test.{}", std::process::id());
         let first = claim_single_instance(&name).unwrap().unwrap();
         assert!(claim_single_instance(&name).unwrap().is_none());
         drop(first);

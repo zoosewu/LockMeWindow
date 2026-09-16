@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: lock-me-window\n"
+"Project-Id-Version: window-warden\n"
 "Language: zh_TW\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"

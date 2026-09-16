@@ -1,11 +1,6 @@
 use crate::lock::{CursorLock, LockStatus};
 use crate::processes::{ProcessChoice, enumerate_processes};
 use crate::{MainWindow, ManagedEntry, PromptKind, Tray};
-use lock_me_window::{
-    ConfigLocation, LOCATION_FILE_NAME, Language, LockTarget, ManagedApplication, NamedEvent,
-    Result, Settings, default_config_dir, set_user_registry_string, startup_command,
-    user_registry_dword,
-};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{ComponentHandle, ModelRc, StandardListViewItem, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
@@ -13,6 +8,11 @@ use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::time::Duration;
+use window_warden::{
+    ConfigLocation, LOCATION_FILE_NAME, Language, LockTarget, ManagedApplication, NamedEvent,
+    Result, Settings, default_config_dir, migrate_config, set_user_registry_string,
+    startup_command, user_registry_dword,
+};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::System::Threading::INFINITE;
 use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
@@ -22,12 +22,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const RUN_VALUE: &str = "LockMeWindow";
+const RUN_VALUE: &str = "WindowWarden";
+const LEGACY_APP_DIR: &str = "LockMeWindow";
+const LEGACY_RUN_VALUE: &str = "LockMeWindow";
 const RECONCILE_INTERVAL: Duration = Duration::from_millis(16);
 const TRAY_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const TRAY_THEME_INTERVAL: Duration = Duration::from_secs(3);
 const PERSONALIZE_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
-const EXPORT_FILE_NAME: &str = "lock-me-window-settings.json";
+const EXPORT_FILE_NAME: &str = "window-warden-settings.json";
 
 struct State {
     settings: Settings,
@@ -77,7 +79,11 @@ macro_rules! on {
 pub fn run(start_minimized: bool, show_event: NamedEvent) -> Result<()> {
     let ui = MainWindow::new()?;
     let default_dir = default_config_dir()?;
+    let migrated = migrate_legacy_config(&default_dir);
     let (location, settings, problem) = load_config(&default_dir);
+    if migrated {
+        adopt_legacy_startup(&settings);
+    }
     let state = Rc::new(RefCell::new(State {
         settings,
         location,
@@ -116,6 +122,25 @@ pub fn run(start_minimized: bool, show_event: NamedEvent) -> Result<()> {
     slint::run_event_loop_until_quit()?;
     state.borrow_mut().lock.unlock();
     Ok(())
+}
+
+fn migrate_legacy_config(default_dir: &Path) -> bool {
+    let Some(legacy) = default_dir
+        .parent()
+        .map(|parent| parent.join(LEGACY_APP_DIR))
+    else {
+        return false;
+    };
+    legacy != default_dir && migrate_config(&legacy, default_dir).unwrap_or(false)
+}
+
+// The old name's startup entry points at the old executable, so replace it with
+// one for this build when the settings that came across asked for startup.
+fn adopt_legacy_startup(settings: &Settings) {
+    let _ = set_user_registry_string(RUN_KEY, LEGACY_RUN_VALUE, None);
+    if settings.start_with_windows {
+        let _ = configure_startup(true);
+    }
 }
 
 fn load_config(default_dir: &Path) -> (ConfigLocation, Settings, Option<(PromptKind, String)>) {
@@ -672,7 +697,7 @@ unsafe extern "system" fn foreground_changed(
 }
 
 // Slint gives up on a tray icon whose first registration fails, which happens when
-// LockMeWindow starts before Explorer, so the tray is only created once the taskbar exists.
+// WindowWarden starts before Explorer, so the tray is only created once the taskbar exists.
 struct TrayKeeper {
     tray: RefCell<Option<Tray>>,
     retry: Timer,

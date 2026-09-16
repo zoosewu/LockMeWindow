@@ -1,5 +1,5 @@
 [package]
-name = "lock-me-window"
+name = "window-warden"
 version = "0.3.1"
 edition = "2024"
 license = "MIT"
@@ -34,7 +34,7 @@ winresource = { version = "0.1.31", default-features = false }
 strip = true
 
 [[bin]]
-name = "lock-me-window"
+name = "window-warden"
 path = "src/main.rs"
 test = false
 bench = false

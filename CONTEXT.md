@@ -1,6 +1,6 @@
 # Glossary
 
-## LockMeWindow
+## WindowWarden
 
 The Windows application that automatically confines the cursor while a managed application is in the foreground.
 
@@ -18,4 +18,4 @@ The boundary used by a cursor lock: either the foreground application window or 
 
 ## Config folder
 
-The folder that holds `settings.json`. It is `%APPDATA%\LockMeWindow` unless a custom folder is chosen; that choice is recorded in `location.json` in the default folder.
+The folder that holds `settings.json`. It is `%APPDATA%\WindowWarden` unless a custom folder is chosen; that choice is recorded in `location.json` in the default folder.

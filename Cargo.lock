@@ -2683,21 +2683,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
-name = "lock-me-window"
-version = "0.3.1"
-dependencies = [
- "raw-window-handle",
- "rfd",
- "serde",
- "serde_json",
- "slint",
- "slint-build",
- "sys-locale",
- "windows-sys 0.61.2",
- "winresource",
-]
-
-[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5467,6 +5452,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "window-warden"
+version = "0.3.1"
+dependencies = [
+ "raw-window-handle",
+ "rfd",
+ "serde",
+ "serde_json",
+ "slint",
+ "slint-build",
+ "sys-locale",
+ "windows-sys 0.61.2",
+ "winresource",
 ]
 
 [[package]]

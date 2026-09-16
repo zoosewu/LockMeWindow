@@ -9,29 +9,29 @@ fn main() {
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         winresource::WindowsResource::new()
-            .set_icon("assets/lock-me-window.ico")
-            .set("ProductName", "LockMeWindow")
-            .set("FileDescription", "LockMeWindow")
+            .set_icon("assets/window-warden.ico")
+            .set("ProductName", "WindowWarden")
+            .set("FileDescription", "WindowWarden")
             .set("CompanyName", "zoosewu")
             .set(
                 "LegalCopyright",
                 "Copyright (c) 2026 zoosewu. Based on AutoCursorLock, Copyright (c) 2020 James La Novara-Gsell. MIT License.",
             )
-            .set("OriginalFilename", "lock-me-window.exe")
-            .set("InternalName", "lock-me-window")
+            .set("OriginalFilename", "window-warden.exe")
+            .set("InternalName", "window-warden")
             .compile()
             .unwrap();
     }
     let manifest =
         std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("app.manifest");
     println!("cargo:rerun-if-changed={}", manifest.display());
-    println!("cargo:rerun-if-changed=assets/lock-me-window.ico");
-    println!("cargo:rustc-link-arg-bin=lock-me-window=/MANIFEST:EMBED");
+    println!("cargo:rerun-if-changed=assets/window-warden.ico");
+    println!("cargo:rustc-link-arg-bin=window-warden=/MANIFEST:EMBED");
     println!(
-        "cargo:rustc-link-arg-bin=lock-me-window=/MANIFESTINPUT:{}",
+        "cargo:rustc-link-arg-bin=window-warden=/MANIFESTINPUT:{}",
         manifest.display()
     );
     println!(
-        "cargo:rustc-link-arg-bin=lock-me-window=/MANIFESTUAC:level='asInvoker' uiAccess='false'"
+        "cargo:rustc-link-arg-bin=window-warden=/MANIFESTUAC:level='asInvoker' uiAccess='false'"
     );
 }

@@ -1,7 +1,7 @@
 use crate::processes::process_identity;
-use lock_me_window::{LockTarget, ManagedApplication, ensure_cursor_clip};
 use std::mem::zeroed;
 use std::ptr::{null, null_mut};
+use window_warden::{LockTarget, ManagedApplication, ensure_cursor_clip};
 use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
     ClientToScreen, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,

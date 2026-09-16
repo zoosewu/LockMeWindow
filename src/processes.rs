@@ -1,8 +1,8 @@
-use lock_me_window::Result;
 use std::ffi::OsString;
 use std::mem::zeroed;
 use std::os::windows::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
+use window_warden::Result;
 use windows_sys::Win32::Foundation::{CloseHandle, HWND, INVALID_HANDLE_VALUE, LPARAM};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,

@@ -26,6 +26,6 @@ Release notes are generated from these types:
 
 ## Releases
 
-Releases are managed by release-please (`.github/workflows/release-please.yml`). Every push to `main` updates the `chore: release x.y.z` pull request. Merging it tags `vX.Y.Z`, creates the GitHub Release, and attaches `lock-me-window.exe` with its `.sha256`.
+Releases are managed by release-please (`.github/workflows/release-please.yml`). Every push to `main` updates the `chore: release x.y.z` pull request. Merging it tags `vX.Y.Z`, creates the GitHub Release, and attaches `window-warden.exe` with its `.sha256`.
 
 Do not edit the version in `Cargo.toml`/`Cargo.lock` or `CHANGELOG.md` by hand.
