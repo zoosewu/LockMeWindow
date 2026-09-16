@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/zoosewu/LockMeWindow/compare/v0.2.0...v0.3.0) (2026-09-16)
+
+
+### Added
+
+* add display names, language setting and clearer wording ([33b63b6](https://github.com/zoosewu/LockMeWindow/commit/33b63b6634aff3601808ece7cfa426ce8ac7e74b))
+
 ## [0.2.0](https://github.com/zoosewu/LockMeWindow/compare/v0.1.1...v0.2.0) (2026-09-15)
 
 
