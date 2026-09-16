@@ -4,13 +4,13 @@ use std::ffi::OsStr;
 use std::mem::zeroed;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::ptr::null;
+use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, GetLastError, HANDLE,
     RECT, SetLastError, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW,
+    HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_DWORD, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
 };
 use windows_sys::Win32::System::Threading::{
     CreateEventW, CreateMutexW, SetEvent, WaitForSingleObject,
@@ -227,6 +227,25 @@ pub fn set_user_registry_string(subkey: &str, name: &str, value: Option<&str>) -
     } else {
         Err(std::io::Error::from_raw_os_error(status as i32).into())
     }
+}
+
+pub fn user_registry_dword(subkey: &str, name: &str) -> Option<u32> {
+    let subkey = wide(subkey);
+    let name = wide(name);
+    let mut value = 0u32;
+    let mut size = size_of_val(&value) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            null_mut(),
+            (&mut value as *mut u32).cast(),
+            &mut size,
+        )
+    };
+    (status == ERROR_SUCCESS).then_some(value)
 }
 
 fn wide(value: &str) -> Vec<u16> {
@@ -498,6 +517,12 @@ mod tests {
         set_user_registry_string(&subkey, "Startup", None).unwrap();
         assert_eq!(user_registry_string(&subkey, "Startup"), None);
         set_user_registry_string(&subkey, "Startup", None).unwrap();
+    }
+
+    #[test]
+    fn missing_registry_dword_reads_as_none() {
+        let subkey = format!(r"Software\LockMeWindow.Test.{}", std::process::id());
+        assert_eq!(user_registry_dword(&subkey, "Missing"), None);
     }
 
     #[test]

@@ -4,6 +4,7 @@ use crate::{MainWindow, ManagedEntry, PromptKind, Tray};
 use lock_me_window::{
     ConfigLocation, LOCATION_FILE_NAME, Language, LockTarget, ManagedApplication, NamedEvent,
     Result, Settings, default_config_dir, set_user_registry_string, startup_command,
+    user_registry_dword,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{ComponentHandle, ModelRc, StandardListViewItem, Timer, TimerMode, VecModel};
@@ -16,13 +17,16 @@ use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::System::Threading::INFINITE;
 use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EVENT_SYSTEM_FOREGROUND, FindWindowW, SetForegroundWindow, WINEVENT_OUTOFCONTEXT,
+    EVENT_SYSTEM_FOREGROUND, FindWindowW, GetSystemMetrics, SM_CXSMICON, SetForegroundWindow,
+    WINEVENT_OUTOFCONTEXT,
 };
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "LockMeWindow";
 const RECONCILE_INTERVAL: Duration = Duration::from_millis(16);
 const TRAY_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+const TRAY_THEME_INTERVAL: Duration = Duration::from_secs(3);
+const PERSONALIZE_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 const EXPORT_FILE_NAME: &str = "lock-me-window-settings.json";
 
 struct State {
@@ -672,6 +676,7 @@ unsafe extern "system" fn foreground_changed(
 struct TrayKeeper {
     tray: RefCell<Option<Tray>>,
     retry: Timer,
+    theme: Timer,
 }
 
 impl TrayKeeper {
@@ -679,6 +684,7 @@ impl TrayKeeper {
         let keeper = Rc::new(Self {
             tray: RefCell::new(None),
             retry: Timer::default(),
+            theme: Timer::default(),
         });
         let weak_keeper = Rc::downgrade(&keeper);
         let ui = ui.as_weak();
@@ -695,12 +701,30 @@ impl TrayKeeper {
                     keeper.retry.stop();
                 }
             });
+
+        // The user can switch the taskbar between light and dark at any time.
+        let weak_keeper = Rc::downgrade(&keeper);
+        keeper
+            .theme
+            .start(TimerMode::Repeated, TRAY_THEME_INTERVAL, move || {
+                let Some(keeper) = weak_keeper.upgrade() else {
+                    return;
+                };
+                if let Some(tray) = &*keeper.tray.borrow() {
+                    let light = light_taskbar();
+                    if tray.get_light_taskbar() != light {
+                        tray.set_light_taskbar(light);
+                    }
+                }
+            });
         keeper
     }
 }
 
 fn create_tray(ui: &slint::Weak<MainWindow>) -> Result<Tray> {
     let tray = Tray::new()?;
+    tray.set_light_taskbar(light_taskbar());
+    tray.set_small_icon(unsafe { GetSystemMetrics(SM_CXSMICON) } <= 16);
     let ui = ui.clone();
     tray.on_show_window(move || {
         if let Some(ui) = ui.upgrade() {
@@ -711,6 +735,10 @@ fn create_tray(ui: &slint::Weak<MainWindow>) -> Result<Tray> {
         let _ = slint::quit_event_loop();
     });
     Ok(tray)
+}
+
+fn light_taskbar() -> bool {
+    user_registry_dword(PERSONALIZE_KEY, "SystemUsesLightTheme").unwrap_or(0) != 0
 }
 
 fn taskbar_exists() -> bool {
