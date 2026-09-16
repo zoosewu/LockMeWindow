@@ -30,6 +30,8 @@ pub enum LockTarget {
 pub struct ManagedApplication {
     pub identity: String,
     pub target: LockTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl ManagedApplication {
@@ -52,6 +54,14 @@ impl ManagedApplication {
             _ => false,
         }
     }
+
+    pub fn display_name(&self) -> &str {
+        self.name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&self.identity)
+    }
 }
 
 fn is_path(value: &str) -> bool {
@@ -73,6 +83,52 @@ pub struct Settings {
     pub apps: Vec<ManagedApplication>,
     #[serde(default)]
     pub start_with_windows: bool,
+    #[serde(default)]
+    pub language: Language,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub enum Language {
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "en")]
+    English,
+    #[serde(rename = "zh-TW")]
+    TraditionalChinese,
+}
+
+// Folder names under `lang/`; English is the untranslated default.
+const TRANSLATIONS: [&str; 1] = ["zh-TW"];
+
+impl Language {
+    // Returns the bundled translation to select, where "" means English.
+    pub fn translation(self, system_locale: Option<&str>) -> &'static str {
+        match self {
+            Language::System => system_locale.map_or("", bundled_language),
+            Language::English => "",
+            Language::TraditionalChinese => "zh-TW",
+        }
+    }
+}
+
+// Matches a locale the same way Slint does: exact name first, then the language part.
+fn bundled_language(locale: &str) -> &'static str {
+    fn base(locale: &str) -> &str {
+        locale
+            .find(['-', '_', '@'])
+            .map_or(locale, |index| &locale[..index])
+    }
+    TRANSLATIONS
+        .iter()
+        .find(|translation| **translation == locale)
+        .or_else(|| {
+            TRANSLATIONS
+                .iter()
+                .find(|translation| base(translation) == base(locale))
+        })
+        .copied()
+        .unwrap_or("")
 }
 
 impl Settings {
@@ -294,10 +350,12 @@ mod tests {
         let by_path = ManagedApplication {
             identity: r"C:\Games\ZZZ\zzz.exe".into(),
             target: LockTarget::Window,
+            name: None,
         };
         let by_name = ManagedApplication {
             identity: "ZZZ.EXE".into(),
             target: LockTarget::Window,
+            name: None,
         };
 
         assert!(by_path.matches("zzz.exe", Some(Path::new(r"c:\games\zzz\ZZZ.EXE"))));
@@ -309,6 +367,7 @@ mod tests {
             ManagedApplication {
                 identity: "ŻÓŁĆ.EXE".into(),
                 target: LockTarget::Window,
+                name: None,
             }
             .matches("żółć", None)
         );
@@ -324,13 +383,54 @@ mod tests {
             apps: vec![ManagedApplication {
                 identity: r"C:\Games\zzz.exe".into(),
                 target: LockTarget::Monitor,
+                name: Some("ZZZ".into()),
             }],
             start_with_windows: true,
+            language: Language::TraditionalChinese,
         };
 
         settings.save_to(&path).unwrap();
         assert_eq!(Settings::load_from(&path).unwrap(), settings);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn display_name_falls_back_to_identity() {
+        let mut app = ManagedApplication {
+            identity: r"C:\Games\zzz.exe".into(),
+            target: LockTarget::default(),
+            name: None,
+        };
+        assert_eq!(app.display_name(), r"C:\Games\zzz.exe");
+
+        app.name = Some("  ".into());
+        assert_eq!(app.display_name(), r"C:\Games\zzz.exe");
+
+        app.name = Some(" ZZZ ".into());
+        assert_eq!(app.display_name(), "ZZZ");
+    }
+
+    #[test]
+    fn language_selects_bundled_translation() {
+        assert_eq!(Language::English.translation(Some("zh-TW")), "");
+        assert_eq!(
+            Language::TraditionalChinese.translation(Some("en-US")),
+            "zh-TW"
+        );
+        assert_eq!(Language::System.translation(Some("zh-TW")), "zh-TW");
+        assert_eq!(Language::System.translation(Some("zh-HK")), "zh-TW");
+        assert_eq!(Language::System.translation(Some("en-US")), "");
+        assert_eq!(Language::System.translation(None), "");
+    }
+
+    #[test]
+    fn old_settings_default_name_and_language() {
+        let settings: Settings = serde_json::from_str(
+            r#"{"apps":[{"identity":"zzz.exe","target":"Window"}],"start_with_windows":true}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.apps[0].name, None);
+        assert_eq!(settings.language, Language::System);
     }
 
     #[test]

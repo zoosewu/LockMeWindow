@@ -7,11 +7,17 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-msgid "Monitor"
-msgstr "螢幕"
+msgid "Monitor showing the application"
+msgstr "應用程式所在螢幕"
 
-msgid "Window"
-msgstr "視窗"
+msgid "Application window"
+msgstr "應用程式視窗"
+
+msgid "The cursor can only move within the monitor that shows the application."
+msgstr "游標只能在應用程式所在的螢幕內移動。"
+
+msgid "The cursor can only move within the content area of the application window."
+msgstr "游標只能在應用程式視窗的內容區域內移動。"
 
 msgid "Could not load settings. Using defaults.\n\n{}"
 msgstr "無法載入設定，將使用預設值。\n\n{}"
@@ -37,8 +43,8 @@ msgstr "無法匯出設定。\n\n{}"
 msgid "Could not change the config folder.\n\n{}"
 msgstr "無法變更設定資料夾。\n\n{}"
 
-msgid "Enter an executable name or select a running application."
-msgstr "請輸入執行檔名稱，或選擇執行中的應用程式。"
+msgid "Enter an application path or executable name, or select a running application."
+msgstr "請輸入應用程式位置或執行檔名稱，或選擇執行中的應用程式。"
 
 msgid "That application is already configured."
 msgstr "這個應用程式已經設定過了。"
@@ -73,11 +79,17 @@ msgstr "確定"
 msgid "Applications"
 msgstr "應用程式"
 
-msgid "Application"
-msgstr "應用程式"
+msgid "Name"
+msgstr "名稱"
 
-msgid "Target"
-msgstr "鎖定範圍"
+msgid "Cursor boundary"
+msgstr "游標限制範圍"
+
+msgid "Language"
+msgstr "語言"
+
+msgid "System default"
+msgstr "跟隨系統"
 
 msgid "Add…"
 msgstr "新增…"
@@ -121,14 +133,17 @@ msgstr "編輯應用程式"
 msgid "Add application"
 msgstr "新增應用程式"
 
-msgid "Running applications"
-msgstr "執行中的應用程式"
+msgid "Running applications (window title — application path)"
+msgstr "執行中的應用程式（視窗標題 — 應用程式位置）"
 
 msgid "Refresh"
 msgstr "重新整理"
 
-msgid "Executable name or full path"
-msgstr "執行檔名稱或完整路徑"
+msgid "Display name (optional)"
+msgstr "顯示名稱（選填）"
+
+msgid "Application path or executable name"
+msgstr "應用程式位置或執行檔名稱"
 
 msgid "Cancel"
 msgstr "取消"

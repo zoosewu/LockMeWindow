@@ -1,9 +1,9 @@
 use crate::lock::{CursorLock, LockStatus};
 use crate::processes::{ProcessChoice, enumerate_processes};
-use crate::{MainWindow, PromptKind, Texts, Tray};
+use crate::{MainWindow, ManagedEntry, PromptKind, Tray};
 use lock_me_window::{
-    ConfigLocation, LOCATION_FILE_NAME, LockTarget, ManagedApplication, NamedEvent, Result,
-    Settings, default_config_dir, set_user_registry_string, startup_command,
+    ConfigLocation, LOCATION_FILE_NAME, Language, LockTarget, ManagedApplication, NamedEvent,
+    Result, Settings, default_config_dir, set_user_registry_string, startup_command,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{ComponentHandle, ModelRc, StandardListViewItem, Timer, TimerMode, VecModel};
@@ -87,6 +87,7 @@ pub fn run(start_minimized: bool, show_event: NamedEvent) -> Result<()> {
         pending_import: None,
         pending_location: None,
     }));
+    apply_language(state.borrow().settings.language);
     sync_settings(&ui, &state.borrow());
     if let Some((kind, detail)) = problem {
         show_prompt(&ui, kind, &detail);
@@ -172,6 +173,7 @@ fn connect(ui: &MainWindow, state: &Shared) {
         start_with_windows_toggled,
         enabled
     );
+    on!(ui, state, on_language_selected, language_selected, index);
     on!(ui, state, on_change_config_folder, change_config_folder);
     on!(ui, state, on_reset_config_folder, reset_config_folder);
     on!(ui, state, on_import_settings, import_settings);
@@ -215,6 +217,7 @@ fn open_editor(ui: &MainWindow, state: &mut State, row: Option<usize>) {
         },
         None => None,
     };
+    ui.set_editor_name(app.and_then(|app| app.name.as_deref()).unwrap_or("").into());
     ui.set_editor_identity(app.map_or("", |app| app.identity.as_str()).into());
     ui.set_editor_target(app.map_or(0, |app| target_index(app.target)));
     ui.set_editor_editing(row.is_some());
@@ -225,14 +228,16 @@ fn open_editor(ui: &MainWindow, state: &mut State, row: Option<usize>) {
 
 fn remove_clicked(ui: &MainWindow, state: &Shared, row: i32) {
     let mut state = state.borrow_mut();
-    let Some((row, identity)) = usize::try_from(row)
-        .ok()
-        .and_then(|row| Some((row, state.settings.apps.get(row)?.identity.clone())))
-    else {
+    let Some((row, name)) = usize::try_from(row).ok().and_then(|row| {
+        Some((
+            row,
+            state.settings.apps.get(row)?.display_name().to_string(),
+        ))
+    }) else {
         return;
     };
     state.pending_remove = Some(row);
-    show_prompt(ui, PromptKind::ConfirmRemove, &identity);
+    show_prompt(ui, PromptKind::ConfirmRemove, &name);
 }
 
 fn refresh_running_clicked(ui: &MainWindow, state: &Shared) {
@@ -289,12 +294,14 @@ fn editor_saved(ui: &MainWindow, state: &Shared) {
         return;
     }
 
+    let name = ui.get_editor_name().trim().to_string();
     let app = ManagedApplication {
         identity,
         target: target_from_index(ui.get_editor_target()),
+        name: (!name.is_empty()).then_some(name),
     };
     if editing.is_some() {
-        show_prompt(ui, PromptKind::ConfirmEdit, &app.identity);
+        show_prompt(ui, PromptKind::ConfirmEdit, app.display_name());
         state.pending_edit = Some(app);
     } else {
         state.settings.apps.push(app);
@@ -374,6 +381,19 @@ fn start_with_windows_toggled(ui: &MainWindow, state: &Shared, enabled: bool) {
     }
     state.settings.start_with_windows = enabled;
     save_settings(ui, &state);
+}
+
+fn language_selected(ui: &MainWindow, state: &Shared, index: i32) {
+    let language = language_from_index(index);
+    apply_language(language);
+    let mut state = state.borrow_mut();
+    state.settings.language = language;
+    save_settings(ui, &state);
+}
+
+fn apply_language(language: Language) {
+    let translation = language.translation(sys_locale::get_locale().as_deref());
+    let _ = slint::select_bundled_translation(translation);
 }
 
 fn change_config_folder(ui: &MainWindow, state: &Shared) {
@@ -476,6 +496,9 @@ fn replace_settings(ui: &MainWindow, state: &mut State, mut settings: Settings) 
         settings.start_with_windows = state.settings.start_with_windows;
         show_prompt(ui, PromptKind::StartupFailed, &error.to_string());
     }
+    if settings.language != state.settings.language {
+        apply_language(settings.language);
+    }
     state.settings = settings;
     settings_changed(ui, state);
 }
@@ -494,22 +517,19 @@ fn save_settings(ui: &MainWindow, state: &State) {
 }
 
 fn sync_settings(ui: &MainWindow, state: &State) {
-    let texts = ui.global::<Texts>();
-    let rows: Vec<ModelRc<StandardListViewItem>> = state
+    let entries: Vec<ManagedEntry> = state
         .settings
         .apps
         .iter()
-        .map(|app| {
-            let target = texts.invoke_target_name(target_index(app.target));
-            ModelRc::new(VecModel::from(vec![
-                StandardListViewItem::from(app.identity.as_str()),
-                StandardListViewItem::from(target),
-            ]))
+        .map(|app| ManagedEntry {
+            label: app.display_name().into(),
+            target: target_index(app.target),
         })
         .collect();
-    ui.set_managed_rows(ModelRc::new(VecModel::from(rows)));
+    ui.set_managed_apps(ModelRc::new(VecModel::from(entries)));
     ui.set_managed_current(-1);
     ui.set_start_with_windows(state.settings.start_with_windows);
+    ui.set_language_index(language_index(state.settings.language));
     ui.set_config_folder(state.config_dir().display().to_string().into());
     ui.set_config_folder_custom(state.location.directory.is_some());
 }
@@ -517,8 +537,8 @@ fn sync_settings(ui: &MainWindow, state: &State) {
 fn set_status(ui: &MainWindow, status: &LockStatus) {
     match status {
         LockStatus::Unlocked => ui.set_locked(false),
-        LockStatus::Locked(identity) => {
-            ui.set_locked_identity(identity.as_str().into());
+        LockStatus::Locked(name) => {
+            ui.set_locked_name(name.as_str().into());
             ui.set_locked(true);
         }
     }
@@ -564,6 +584,22 @@ fn target_from_index(index: i32) -> LockTarget {
         LockTarget::Monitor
     } else {
         LockTarget::Window
+    }
+}
+
+fn language_index(language: Language) -> i32 {
+    match language {
+        Language::System => 0,
+        Language::English => 1,
+        Language::TraditionalChinese => 2,
+    }
+}
+
+fn language_from_index(index: i32) -> Language {
+    match index {
+        1 => Language::English,
+        2 => Language::TraditionalChinese,
+        _ => Language::System,
     }
 }
 

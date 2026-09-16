@@ -2,7 +2,7 @@
 
 A small Windows 10/11 x64 utility that confines the cursor while a configured application is in the foreground.
 
-LockMeWindow runs without administrator rights, including when the configured application runs as administrator. The interface follows the Windows display language (English or Traditional Chinese).
+LockMeWindow runs without administrator rights, including when the configured application runs as administrator. The interface is available in English and Traditional Chinese and follows the Windows display language by default.
 
 <a href="https://slint.dev"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-dark.svg"><img alt="#MadeWithSlint" src="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-light.svg" height="60"></picture></a>
 
@@ -17,10 +17,11 @@ Download `lock-me-window.exe` from the [latest release](https://github.com/zoose
 ## Use
 
 1. Launch `lock-me-window.exe`.
-2. On the **Applications** tab, select **Add…**, pick a running application or enter an executable name/full path, choose `Window` or `Monitor`, then select **Save**. Use **Refresh** to rescan running applications.
-3. Select an entry to **Edit…** or **Remove** it. Both ask for confirmation.
+2. On the **Applications** tab, select **Add…** and pick a running application or enter its path or executable name. Optionally enter a display name to show instead of the path. Choose the cursor boundary, **Application window** or **Monitor showing the application**, then select **Save**. Use **Refresh** to rescan running applications.
+3. Select an entry to **Edit…** or **Remove** it, or double-click it to edit. Both ask for confirmation.
 4. On the **Settings** tab:
    - Enable **Start with Windows** to launch LockMeWindow in the tray when you sign in.
+   - Choose **Language** to follow the system or always use English or Traditional Chinese.
    - Select **Change…** to keep settings in another folder, or **Reset to default** to return to `%APPDATA%\LockMeWindow`. If the chosen folder already contains settings, you can load them or overwrite them with the current settings.
    - Select **Export…** to save all settings to a JSON file, or **Import…** to replace all settings with one.
 

@@ -3,9 +3,9 @@ import {
     CheckBox,
     ComboBox,
     LineEdit,
+    ListView,
     Palette,
     StandardListView,
-    StandardTableView,
     TabWidget,
 } from "std-widgets.slint";
 import { Tray } from "tray.slint";
@@ -30,30 +30,31 @@ export enum PromptKind {
     config-exists,
 }
 
-export global Texts {
-    public pure function target-name(target: int) -> string {
-        return target == 1 ? @tr("Monitor") : @tr("Window");
-    }
+export struct ManagedEntry {
+    label: string,
+    target: int,
 }
 
 export component MainWindow inherits Window {
     title: "LockMeWindow";
     icon: @image-url("../assets/lock-me-window.png");
     preferred-width: 780px;
-    preferred-height: 560px;
+    preferred-height: 620px;
     min-width: 560px;
-    min-height: 420px;
+    min-height: 460px;
 
-    in property <[[StandardListViewItem]]> managed-rows;
+    in property <[ManagedEntry]> managed-apps;
     in-out property <int> managed-current: -1;
     in property <bool> locked;
-    in property <string> locked-identity;
+    in property <string> locked-name;
     in-out property <bool> start-with-windows;
+    in-out property <int> language-index;
     in property <string> config-folder;
     in property <bool> config-folder-custom;
 
     in-out property <bool> editor-open;
     in property <bool> editor-editing;
+    in-out property <string> editor-name;
     in-out property <string> editor-identity;
     in-out property <int> editor-target;
     in property <[StandardListViewItem]> running-apps;
@@ -72,10 +73,19 @@ export component MainWindow inherits Window {
     callback prompt-alternate(kind: PromptKind);
     callback prompt-canceled(kind: PromptKind);
     callback start-with-windows-toggled(enabled: bool);
+    callback language-selected(index: int);
     callback change-config-folder();
     callback reset-config-folder();
     callback import-settings();
     callback export-settings();
+
+    pure function target-name(target: int) -> string {
+        return target == 1 ? @tr("Monitor showing the application") : @tr("Application window");
+    }
+
+    pure function target-hint(target: int) -> string {
+        return target == 1 ? @tr("The cursor can only move within the monitor that shows the application.") : @tr("The cursor can only move within the content area of the application window.");
+    }
 
     pure function prompt-message(kind: PromptKind, detail: string) -> string {
         if kind == PromptKind.load-failed {
@@ -103,7 +113,7 @@ export component MainWindow inherits Window {
             return @tr("Could not change the config folder.\n\n{}", detail);
         }
         if kind == PromptKind.identity-empty {
-            return @tr("Enter an executable name or select a running application.");
+            return @tr("Enter an application path or executable name, or select a running application.");
         }
         if kind == PromptKind.identity-duplicate {
             return @tr("That application is already configured.");
@@ -157,14 +167,80 @@ export component MainWindow inherits Window {
                     padding: 12px;
                     spacing: 12px;
 
-                    StandardTableView {
+                    VerticalLayout {
                         horizontal-stretch: 1;
-                        columns: [
-                            { title: @tr("Application"), horizontal-stretch: 1 },
-                            { title: @tr("Target"), min-width: 120px },
-                        ];
-                        rows: root.managed-rows;
-                        current-row <=> root.managed-current;
+                        spacing: 4px;
+
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 12px;
+
+                            Text {
+                                text: @tr("Name");
+                                color: Palette.foreground;
+                                font-weight: 600;
+                                horizontal-stretch: 1;
+                            }
+
+                            Text {
+                                width: 220px;
+                                text: @tr("Cursor boundary");
+                                color: Palette.foreground;
+                                font-weight: 600;
+                            }
+                        }
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-color: Palette.border;
+                            border-width: 1px;
+                            border-radius: 4px;
+
+                            ListView {
+                                x: 1px;
+                                y: 1px;
+                                width: parent.width - 2px;
+                                height: parent.height - 2px;
+
+                                for entry[index] in root.managed-apps: Rectangle {
+                                    height: 36px;
+                                    background: index == root.managed-current ? Palette.selection-background : transparent;
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.managed-current = index;
+                                        }
+                                        double-clicked => {
+                                            root.managed-current = index;
+                                            root.edit-clicked(index);
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        padding-left: 11px;
+                                        padding-right: 11px;
+                                        spacing: 12px;
+
+                                        Text {
+                                            text: entry.label;
+                                            color: index == root.managed-current ? Palette.selection-foreground : Palette.foreground;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                            horizontal-stretch: 1;
+                                        }
+
+                                        Text {
+                                            width: 220px;
+                                            text: root.target-name(entry.target);
+                                            color: index == root.managed-current ? Palette.selection-foreground : Palette.foreground;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     VerticalLayout {
@@ -210,6 +286,24 @@ export component MainWindow inherits Window {
                         checked <=> root.start-with-windows;
                         toggled => {
                             root.start-with-windows-toggled(self.checked);
+                        }
+                    }
+
+                    Text {
+                        text: @tr("Language");
+                        color: Palette.foreground;
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        ComboBox {
+                            min-width: 220px;
+                            model: [@tr("System default"), "English", "繁體中文"];
+                            current-index <=> root.language-index;
+                            selected(value) => {
+                                root.language-selected(self.current-index);
+                            }
                         }
                     }
 
@@ -271,7 +365,7 @@ export component MainWindow inherits Window {
         }
 
         Text {
-            text: root.locked ? @tr("Cursor: locked to {}", root.locked-identity) : @tr("Cursor: unlocked");
+            text: root.locked ? @tr("Cursor: locked to {}", root.locked-name) : @tr("Cursor: unlocked");
             color: Palette.foreground;
             overflow: elide;
         }
@@ -288,7 +382,7 @@ export component MainWindow inherits Window {
 
         Rectangle {
             width: min(parent.width - 48px, 680px);
-            height: min(parent.height - 48px, 520px);
+            height: min(parent.height - 48px, 620px);
             background: Palette.background;
             border-color: Palette.border;
             border-width: 1px;
@@ -309,9 +403,10 @@ export component MainWindow inherits Window {
                     spacing: 8px;
 
                     Text {
-                        text: @tr("Running applications");
+                        text: @tr("Running applications (window title — application path)");
                         color: Palette.foreground;
                         vertical-alignment: center;
+                        overflow: elide;
                         horizontal-stretch: 1;
                     }
 
@@ -333,22 +428,43 @@ export component MainWindow inherits Window {
                 }
 
                 Text {
-                    text: @tr("Executable name or full path");
+                    text: @tr("Display name (optional)");
+                    color: Palette.foreground;
+                }
+
+                LineEdit {
+                    text <=> root.editor-name;
+                }
+
+                Text {
+                    text: @tr("Application path or executable name");
+                    color: Palette.foreground;
+                }
+
+                LineEdit {
+                    text <=> root.editor-identity;
+                }
+
+                Text {
+                    text: @tr("Cursor boundary");
                     color: Palette.foreground;
                 }
 
                 HorizontalLayout {
-                    spacing: 8px;
-
-                    LineEdit {
-                        horizontal-stretch: 1;
-                        text <=> root.editor-identity;
-                    }
+                    alignment: start;
 
                     ComboBox {
-                        model: [@tr("Window"), @tr("Monitor")];
+                        min-width: 260px;
+                        model: [root.target-name(0), root.target-name(1)];
                         current-index <=> root.editor-target;
                     }
+                }
+
+                Text {
+                    text: root.target-hint(root.editor-target);
+                    color: Palette.foreground;
+                    opacity: 0.7;
+                    wrap: word-wrap;
                 }
 
                 HorizontalLayout {

@@ -75,7 +75,7 @@ impl CursorLock {
         };
         if rect.is_some_and(ensure_cursor_clip) {
             self.owns_clip = true;
-            LockStatus::Locked(app.identity.clone())
+            LockStatus::Locked(app.display_name().to_string())
         } else {
             self.unlock();
             LockStatus::Unlocked
