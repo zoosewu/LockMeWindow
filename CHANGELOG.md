@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/zoosewu/LockMeWindow/compare/v0.4.0...v0.5.0) (2026-09-17)
+
+
+### Added
+
+* mute applications while they are in the background ([1527467](https://github.com/zoosewu/LockMeWindow/commit/1527467f7a49badfb6f0bde957195cccdffa8b22))
+
 ## [0.4.0](https://github.com/zoosewu/LockMeWindow/compare/v0.3.1...v0.4.0) (2026-09-16)
 
 
