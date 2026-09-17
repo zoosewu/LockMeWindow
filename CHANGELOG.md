@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/zoosewu/LockMeWindow/compare/v0.5.0...v0.5.1) (2026-09-17)
+
+
+### Fixed
+
+* tidy the feature options in the add/edit dialog ([6491fcf](https://github.com/zoosewu/LockMeWindow/commit/6491fcfa96bbf76a3fa9caa707a9c02b6b275e94))
+
 ## [0.5.0](https://github.com/zoosewu/LockMeWindow/compare/v0.4.0...v0.5.0) (2026-09-17)
 
 
