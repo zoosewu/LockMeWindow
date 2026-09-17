@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/zoosewu/LockMeWindow/compare/v0.3.1...v0.4.0) (2026-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* the executable is now window-warden.exe and settings live in %APPDATA%\WindowWarden. On the first run under the new name the settings are copied from the old folder, the old startup entry is removed, and startup is registered again for the new executable when it was enabled.
+
+### Added
+
+* redraw the icon set and follow the taskbar theme ([5e40879](https://github.com/zoosewu/LockMeWindow/commit/5e40879fc3f76e945db239ec4d3a8f69f273c1b5))
+* rename the project to WindowWarden ([170b95f](https://github.com/zoosewu/LockMeWindow/commit/170b95f409f48f9654e076fb6ea30dacee0ace78))
+
 ## [0.3.1](https://github.com/zoosewu/LockMeWindow/compare/v0.3.0...v0.3.1) (2026-09-16)
 
 
