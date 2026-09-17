@@ -2,6 +2,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 mod app;
+mod audio;
 mod lock;
 mod processes;
 

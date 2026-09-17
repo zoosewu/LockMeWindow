@@ -156,3 +156,27 @@ msgstr "顯示"
 
 msgid "Exit"
 msgstr "結束"
+
+msgid "Features"
+msgstr "功能"
+
+msgid "Lock cursor"
+msgstr "鎖定游標"
+
+msgid "Lock cursor ({})"
+msgstr "鎖定游標（{}）"
+
+msgid "Background mute"
+msgstr "背景靜音"
+
+msgid "No features enabled"
+msgstr "未啟用功能"
+
+msgid "Mute in background"
+msgstr "在背景時靜音"
+
+msgid "Mutes this application while another window is in the foreground, and restores its sound when it comes back."
+msgstr "切換到其他視窗時將此應用程式靜音，回到前景時恢復。"
+
+msgid "Could not access audio sessions. Background mute is unavailable.\n\n{}"
+msgstr "無法存取音訊工作階段，背景靜音目前無法使用。\n\n{}"

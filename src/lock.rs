@@ -94,7 +94,7 @@ fn foreground_app(foreground: HWND, apps: &[ManagedApplication]) -> Option<Manag
     unsafe { GetWindowThreadProcessId(foreground, &mut pid) };
     let identity = unsafe { process_identity(pid) }?;
     apps.iter()
-        .find(|app| app.matches(&identity.name, identity.path.as_deref()))
+        .find(|app| app.lock_cursor && app.matches(&identity.name, identity.path.as_deref()))
         .cloned()
 }
 

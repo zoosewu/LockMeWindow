@@ -1,17 +1,20 @@
+use crate::audio::AudioSessions;
 use crate::lock::{CursorLock, LockStatus};
-use crate::processes::{ProcessChoice, enumerate_processes};
+use crate::processes::{ProcessChoice, enumerate_processes, foreground_identity};
 use crate::{MainWindow, ManagedEntry, PromptKind, Tray};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{ComponentHandle, ModelRc, StandardListViewItem, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
 use std::time::Duration;
 use window_warden::{
-    ConfigLocation, LOCATION_FILE_NAME, Language, LockTarget, ManagedApplication, NamedEvent,
-    Result, Settings, default_config_dir, migrate_config, set_user_registry_string,
-    startup_command, user_registry_dword,
+    BackgroundMute, ConfigLocation, LOCATION_FILE_NAME, Language, LockTarget, MUTED_FILE_NAME,
+    ManagedApplication, NamedEvent, Result, Settings, default_config_dir, load_muted_owners,
+    migrate_config, save_muted_owners, set_user_registry_string, startup_command,
+    user_registry_dword,
 };
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::System::Threading::INFINITE;
@@ -26,6 +29,7 @@ const RUN_VALUE: &str = "WindowWarden";
 const LEGACY_APP_DIR: &str = "LockMeWindow";
 const LEGACY_RUN_VALUE: &str = "LockMeWindow";
 const RECONCILE_INTERVAL: Duration = Duration::from_millis(16);
+const AUDIO_INTERVAL: Duration = Duration::from_secs(1);
 const TRAY_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const TRAY_THEME_INTERVAL: Duration = Duration::from_secs(3);
 const PERSONALIZE_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
@@ -43,6 +47,10 @@ struct State {
     pending_remove: Option<usize>,
     pending_import: Option<Settings>,
     pending_location: Option<ConfigLocation>,
+    mute: BackgroundMute,
+    audio: Option<AudioSessions>,
+    muted_path: PathBuf,
+    saved_owners: BTreeSet<String>,
 }
 
 impl State {
@@ -84,6 +92,17 @@ pub fn run(start_minimized: bool, show_event: NamedEvent) -> Result<()> {
     if migrated {
         adopt_legacy_startup(&settings);
     }
+
+    // Mutes left behind by a run that ended without restoring them.
+    let muted_path = default_dir.join(MUTED_FILE_NAME);
+    let saved_owners = load_muted_owners(&muted_path).unwrap_or_default();
+    let (audio, audio_problem) = match AudioSessions::new() {
+        Ok(audio) => (Some(audio), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
+    let needs_audio =
+        !saved_owners.is_empty() || settings.apps.iter().any(|app| app.mute_in_background);
+
     let state = Rc::new(RefCell::new(State {
         settings,
         location,
@@ -96,13 +115,20 @@ pub fn run(start_minimized: bool, show_event: NamedEvent) -> Result<()> {
         pending_remove: None,
         pending_import: None,
         pending_location: None,
+        mute: BackgroundMute::with_pending(saved_owners.clone()),
+        audio,
+        muted_path,
+        saved_owners,
     }));
     apply_language(state.borrow().settings.language);
     sync_settings(&ui, &state.borrow());
-    if let Some((kind, detail)) = problem {
-        show_prompt(&ui, kind, &detail);
+    match (problem, audio_problem) {
+        (Some((kind, detail)), _) => show_prompt(&ui, kind, &detail),
+        (None, Some(detail)) if needs_audio => show_prompt(&ui, PromptKind::AudioFailed, &detail),
+        _ => {}
     }
     connect(&ui, &state);
+    reconcile_audio(&mut state.borrow_mut());
 
     let reconcile = {
         let ui = ui.as_weak();
@@ -111,7 +137,28 @@ pub fn run(start_minimized: bool, show_event: NamedEvent) -> Result<()> {
     };
     let reconcile_timer = Timer::default();
     reconcile_timer.start(TimerMode::Repeated, RECONCILE_INTERVAL, reconcile.clone());
-    FOREGROUND_CHANGED.with(|callback| *callback.borrow_mut() = Some(Box::new(reconcile)));
+
+    // New audio sessions appear on their own, for example when a game starts its sound late.
+    let audio_timer = Timer::default();
+    audio_timer.start(TimerMode::Repeated, AUDIO_INTERVAL, {
+        let state = Rc::clone(&state);
+        move || {
+            if let Ok(mut state) = state.try_borrow_mut() {
+                reconcile_audio(&mut state);
+            }
+        }
+    });
+
+    let foreground_changed = {
+        let state = Rc::clone(&state);
+        move || {
+            reconcile();
+            if let Ok(mut state) = state.try_borrow_mut() {
+                reconcile_audio(&mut state);
+            }
+        }
+    };
+    FOREGROUND_CHANGED.with(|callback| *callback.borrow_mut() = Some(Box::new(foreground_changed)));
     let _hook = ForegroundHook::install()?;
     let _tray = TrayKeeper::start(&ui);
     listen_for_show(&ui, show_event);
@@ -120,7 +167,10 @@ pub fn run(start_minimized: bool, show_event: NamedEvent) -> Result<()> {
         ui.show()?;
     }
     slint::run_event_loop_until_quit()?;
-    state.borrow_mut().lock.unlock();
+
+    let mut state = state.borrow_mut();
+    state.lock.unlock();
+    release_audio(&mut state);
     Ok(())
 }
 
@@ -228,6 +278,48 @@ fn reconcile(ui: &slint::Weak<MainWindow>, state: &Shared) {
     }
 }
 
+fn reconcile_audio(state: &mut State) {
+    let State {
+        audio,
+        mute,
+        settings,
+        ..
+    } = &mut *state;
+    let Some(audio) = audio else {
+        return;
+    };
+    if mute.is_idle() && !settings.apps.iter().any(|app| app.mute_in_background) {
+        return;
+    }
+    let snapshot = audio.snapshot();
+    let foreground = unsafe { foreground_identity() };
+    let actions = mute.plan(
+        &settings.apps,
+        foreground
+            .as_ref()
+            .map(|identity| (identity.name.as_str(), identity.path.as_deref())),
+        &snapshot.sessions,
+    );
+    snapshot.apply(&actions);
+    save_mute_owners(state);
+}
+
+fn release_audio(state: &mut State) {
+    if let Some(audio) = &state.audio {
+        let snapshot = audio.snapshot();
+        let actions = state.mute.release_all(&snapshot.sessions);
+        snapshot.apply(&actions);
+    }
+    save_mute_owners(state);
+}
+
+fn save_mute_owners(state: &mut State) {
+    let owners = state.mute.owners();
+    if owners != state.saved_owners && save_muted_owners(&state.muted_path, &owners).is_ok() {
+        state.saved_owners = owners;
+    }
+}
+
 fn add_clicked(ui: &MainWindow, state: &Shared) {
     open_editor(ui, &mut state.borrow_mut(), None);
 }
@@ -249,6 +341,8 @@ fn open_editor(ui: &MainWindow, state: &mut State, row: Option<usize>) {
     ui.set_editor_name(app.and_then(|app| app.name.as_deref()).unwrap_or("").into());
     ui.set_editor_identity(app.map_or("", |app| app.identity.as_str()).into());
     ui.set_editor_target(app.map_or(0, |app| target_index(app.target)));
+    ui.set_editor_lock_cursor(app.is_none_or(|app| app.lock_cursor));
+    ui.set_editor_mute(app.is_some_and(|app| app.mute_in_background));
     ui.set_editor_editing(row.is_some());
     state.editing = row;
     refresh_running(ui, state);
@@ -328,6 +422,8 @@ fn editor_saved(ui: &MainWindow, state: &Shared) {
         identity,
         target: target_from_index(ui.get_editor_target()),
         name: (!name.is_empty()).then_some(name),
+        lock_cursor: ui.get_editor_lock_cursor(),
+        mute_in_background: ui.get_editor_mute(),
     };
     if editing.is_some() {
         show_prompt(ui, PromptKind::ConfirmEdit, app.display_name());
@@ -537,6 +633,7 @@ fn settings_changed(ui: &MainWindow, state: &mut State) {
     sync_settings(ui, state);
     state.status = state.lock.refresh(&state.settings.apps);
     set_status(ui, &state.status);
+    reconcile_audio(state);
 }
 
 fn save_settings(ui: &MainWindow, state: &State) {
@@ -553,6 +650,8 @@ fn sync_settings(ui: &MainWindow, state: &State) {
         .map(|app| ManagedEntry {
             label: app.display_name().into(),
             target: target_index(app.target),
+            lock_cursor: app.lock_cursor,
+            mute: app.mute_in_background,
         })
         .collect();
     ui.set_managed_apps(ModelRc::new(VecModel::from(entries)));

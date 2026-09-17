@@ -11,7 +11,8 @@ use windows_sys::Win32::System::Threading::{
     GetCurrentProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, IsWindowVisible,
 };
 
 #[derive(Clone)]
@@ -73,6 +74,16 @@ unsafe extern "system" fn enum_window(hwnd: HWND, lparam: LPARAM) -> i32 {
         path: identity.path,
     });
     1
+}
+
+pub unsafe fn foreground_identity() -> Option<ProcessIdentity> {
+    let window = GetForegroundWindow();
+    if window.is_null() {
+        return None;
+    }
+    let mut pid = 0;
+    GetWindowThreadProcessId(window, &mut pid);
+    process_identity(pid)
 }
 
 pub unsafe fn process_identity(pid: u32) -> Option<ProcessIdentity> {

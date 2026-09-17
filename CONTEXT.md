@@ -2,7 +2,7 @@
 
 ## WindowWarden
 
-The Windows application that automatically confines the cursor while a managed application is in the foreground.
+The Windows application that applies per-application features based on which window is in the foreground: a cursor lock and a background mute.
 
 ## Managed application
 
@@ -19,3 +19,7 @@ The boundary used by a cursor lock: either the foreground application window or 
 ## Config folder
 
 The folder that holds `settings.json`. It is `%APPDATA%\WindowWarden` unless a custom folder is chosen; that choice is recorded in `location.json` in the default folder.
+
+## Background mute
+
+Muting a managed application's audio sessions while another window is in the foreground, and restoring them when it comes back. WindowWarden only restores the mutes it added; a mute the user set stays as it is.

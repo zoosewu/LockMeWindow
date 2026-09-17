@@ -22,6 +22,7 @@ export enum PromptKind {
     import-failed,
     export-failed,
     relocate-failed,
+    audio-failed,
     identity-empty,
     identity-duplicate,
     confirm-edit,
@@ -33,13 +34,15 @@ export enum PromptKind {
 export struct ManagedEntry {
     label: string,
     target: int,
+    lock-cursor: bool,
+    mute: bool,
 }
 
 export component MainWindow inherits Window {
     title: "WindowWarden";
     icon: @image-url("../assets/window-warden.png");
     preferred-width: 780px;
-    preferred-height: 620px;
+    preferred-height: 700px;
     min-width: 560px;
     min-height: 460px;
 
@@ -57,6 +60,8 @@ export component MainWindow inherits Window {
     in-out property <string> editor-name;
     in-out property <string> editor-identity;
     in-out property <int> editor-target;
+    in-out property <bool> editor-lock-cursor;
+    in-out property <bool> editor-mute;
     in property <[StandardListViewItem]> running-apps;
     in-out property <int> running-current: -1;
 
@@ -87,6 +92,19 @@ export component MainWindow inherits Window {
         return target == 1 ? @tr("The cursor can only move within the monitor that shows the application.") : @tr("The cursor can only move within the content area of the application window.");
     }
 
+    pure function features-text(lock-cursor: bool, target: int, mute: bool) -> string {
+        if lock-cursor && mute {
+            return @tr("Lock cursor ({})", root.target-name(target)) + " · " + @tr("Background mute");
+        }
+        if lock-cursor {
+            return @tr("Lock cursor ({})", root.target-name(target));
+        }
+        if mute {
+            return @tr("Background mute");
+        }
+        return @tr("No features enabled");
+    }
+
     pure function prompt-message(kind: PromptKind, detail: string) -> string {
         if kind == PromptKind.load-failed {
             return @tr("Could not load settings. Using defaults.\n\n{}", detail);
@@ -111,6 +129,9 @@ export component MainWindow inherits Window {
         }
         if kind == PromptKind.relocate-failed {
             return @tr("Could not change the config folder.\n\n{}", detail);
+        }
+        if kind == PromptKind.audio-failed {
+            return @tr("Could not access audio sessions. Background mute is unavailable.\n\n{}", detail);
         }
         if kind == PromptKind.identity-empty {
             return @tr("Enter an application path or executable name, or select a running application.");
@@ -184,8 +205,8 @@ export component MainWindow inherits Window {
                             }
 
                             Text {
-                                width: 220px;
-                                text: @tr("Cursor boundary");
+                                width: 300px;
+                                text: @tr("Features");
                                 color: Palette.foreground;
                                 font-weight: 600;
                             }
@@ -231,8 +252,8 @@ export component MainWindow inherits Window {
                                         }
 
                                         Text {
-                                            width: 220px;
-                                            text: root.target-name(entry.target);
+                                            width: 300px;
+                                            text: root.features-text(entry.lock-cursor, entry.target, entry.mute);
                                             color: index == root.managed-current ? Palette.selection-foreground : Palette.foreground;
                                             vertical-alignment: center;
                                             overflow: elide;
@@ -382,7 +403,7 @@ export component MainWindow inherits Window {
 
         Rectangle {
             width: min(parent.width - 48px, 680px);
-            height: min(parent.height - 48px, 620px);
+            height: min(parent.height - 48px, 700px);
             background: Palette.background;
             border-color: Palette.border;
             border-width: 1px;
@@ -446,25 +467,57 @@ export component MainWindow inherits Window {
                 }
 
                 Text {
-                    text: @tr("Cursor boundary");
+                    text: @tr("Features");
                     color: Palette.foreground;
+                    font-weight: 600;
                 }
 
-                HorizontalLayout {
-                    alignment: start;
+                CheckBox {
+                    text: @tr("Lock cursor");
+                    checked <=> root.editor-lock-cursor;
+                }
 
-                    ComboBox {
-                        min-width: 260px;
-                        model: [root.target-name(0), root.target-name(1)];
-                        current-index <=> root.editor-target;
+                if root.editor-lock-cursor: VerticalLayout {
+                    padding-left: 28px;
+                    spacing: 6px;
+
+                    Text {
+                        text: @tr("Cursor boundary");
+                        color: Palette.foreground;
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+
+                        ComboBox {
+                            min-width: 260px;
+                            model: [root.target-name(0), root.target-name(1)];
+                            current-index <=> root.editor-target;
+                        }
+                    }
+
+                    Text {
+                        text: root.target-hint(root.editor-target);
+                        color: Palette.foreground;
+                        opacity: 0.7;
+                        wrap: word-wrap;
                     }
                 }
 
-                Text {
-                    text: root.target-hint(root.editor-target);
-                    color: Palette.foreground;
-                    opacity: 0.7;
-                    wrap: word-wrap;
+                CheckBox {
+                    text: @tr("Mute in background");
+                    checked <=> root.editor-mute;
+                }
+
+                if root.editor-mute: HorizontalLayout {
+                    padding-left: 28px;
+
+                    Text {
+                        text: @tr("Mutes this application while another window is in the foreground, and restores its sound when it comes back.");
+                        color: Palette.foreground;
+                        opacity: 0.7;
+                        wrap: word-wrap;
+                    }
                 }
 
                 HorizontalLayout {

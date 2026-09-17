@@ -1,5 +1,6 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::mem::zeroed;
 use std::os::windows::ffi::OsStrExt;
@@ -32,6 +33,15 @@ pub struct ManagedApplication {
     pub target: LockTarget,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default = "enabled")]
+    pub lock_cursor: bool,
+    #[serde(default)]
+    pub mute_in_background: bool,
+}
+
+// Entries saved before features were selectable only locked the cursor.
+fn enabled() -> bool {
+    true
 }
 
 impl ManagedApplication {
@@ -187,6 +197,162 @@ pub fn migrate_config(legacy_dir: &Path, config_dir: &Path) -> Result<bool> {
         std::fs::copy(location, config_dir.join(LOCATION_FILE_NAME))?;
     }
     Ok(true)
+}
+
+pub const MUTED_FILE_NAME: &str = "muted.json";
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioSession {
+    pub key: String,
+    pub process_name: String,
+    pub process_path: Option<PathBuf>,
+    pub muted: bool,
+}
+
+impl AudioSession {
+    // Sessions come and go; the program that owns them is what stays the same.
+    pub fn owner(&self) -> String {
+        self.process_path
+            .as_deref()
+            .map(|path| normalize_path(&path.to_string_lossy()))
+            .unwrap_or_else(|| normalize_name(&self.process_name))
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct MuteActions {
+    pub mute: Vec<String>,
+    pub unmute: Vec<String>,
+}
+
+// Tracks the mutes WindowWarden added, so it only ever restores its own.
+#[derive(Debug, Default)]
+pub struct BackgroundMute {
+    // Session key to owning program, for sessions muted here and not yet restored.
+    muted: HashMap<String, String>,
+    // Sessions the user unmuted while in the background; left alone until they come to the front.
+    overridden: HashSet<String>,
+    // Programs muted here whose sessions ended. Windows hands that mute to the program's next
+    // session, so it is restored or adopted when one appears.
+    pending: BTreeSet<String>,
+}
+
+impl BackgroundMute {
+    pub fn with_pending(owners: BTreeSet<String>) -> Self {
+        Self {
+            pending: owners,
+            ..Self::default()
+        }
+    }
+
+    pub fn owners(&self) -> BTreeSet<String> {
+        self.muted.values().chain(&self.pending).cloned().collect()
+    }
+
+    pub fn is_idle(&self) -> bool {
+        self.muted.is_empty() && self.pending.is_empty()
+    }
+
+    pub fn plan(
+        &mut self,
+        apps: &[ManagedApplication],
+        foreground: Option<(&str, Option<&Path>)>,
+        sessions: &[AudioSession],
+    ) -> MuteActions {
+        self.forget_ended(sessions);
+        let mut actions = MuteActions::default();
+        let mut seen = BTreeSet::new();
+
+        for session in sessions {
+            let owner = session.owner();
+            let pending = self.pending.contains(&owner);
+            let wants_mute = apps.iter().any(|app| {
+                app.mute_in_background
+                    && app.matches(&session.process_name, session.process_path.as_deref())
+                    && !foreground.is_some_and(|(name, path)| app.matches(name, path))
+            });
+
+            if wants_mute {
+                if self.overridden.contains(&session.key) {
+                    // The user unmuted it in the background; wait for the next switch.
+                } else if self.muted.contains_key(&session.key) {
+                    if !session.muted {
+                        self.muted.remove(&session.key);
+                        self.overridden.insert(session.key.clone());
+                    }
+                } else if !session.muted {
+                    actions.mute.push(session.key.clone());
+                    self.muted.insert(session.key.clone(), owner.clone());
+                } else if pending {
+                    self.muted.insert(session.key.clone(), owner.clone());
+                }
+            } else {
+                self.overridden.remove(&session.key);
+                let ours = self.muted.remove(&session.key).is_some();
+                if (ours || pending) && session.muted {
+                    actions.unmute.push(session.key.clone());
+                }
+            }
+            seen.insert(owner);
+        }
+
+        self.pending.retain(|owner| !seen.contains(owner));
+        actions
+    }
+
+    pub fn release_all(&mut self, sessions: &[AudioSession]) -> MuteActions {
+        self.forget_ended(sessions);
+        let mut actions = MuteActions::default();
+        let mut released = BTreeSet::new();
+
+        for session in sessions {
+            let owner = session.owner();
+            let ours = self.muted.remove(&session.key).is_some() || self.pending.contains(&owner);
+            if ours {
+                if session.muted {
+                    actions.unmute.push(session.key.clone());
+                }
+                released.insert(owner);
+            }
+        }
+
+        self.pending.retain(|owner| !released.contains(owner));
+        self.overridden.clear();
+        actions
+    }
+
+    fn forget_ended(&mut self, sessions: &[AudioSession]) {
+        let live: HashSet<&str> = sessions
+            .iter()
+            .map(|session| session.key.as_str())
+            .collect();
+        let ended: Vec<String> = self
+            .muted
+            .keys()
+            .filter(|key| !live.contains(key.as_str()))
+            .cloned()
+            .collect();
+        for key in ended {
+            if let Some(owner) = self.muted.remove(&key) {
+                self.pending.insert(owner);
+            }
+        }
+        self.overridden.retain(|key| live.contains(key.as_str()));
+    }
+}
+
+pub fn load_muted_owners(path: &Path) -> Result<BTreeSet<String>> {
+    load_json(path)
+}
+
+pub fn save_muted_owners(path: &Path, owners: &BTreeSet<String>) -> Result<()> {
+    if !owners.is_empty() {
+        return save_json(path, owners);
+    }
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
 }
 
 fn load_json<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
@@ -388,11 +554,15 @@ mod tests {
             identity: r"C:\Games\ZZZ\zzz.exe".into(),
             target: LockTarget::Window,
             name: None,
+            lock_cursor: true,
+            mute_in_background: false,
         };
         let by_name = ManagedApplication {
             identity: "ZZZ.EXE".into(),
             target: LockTarget::Window,
             name: None,
+            lock_cursor: true,
+            mute_in_background: false,
         };
 
         assert!(by_path.matches("zzz.exe", Some(Path::new(r"c:\games\zzz\ZZZ.EXE"))));
@@ -405,6 +575,8 @@ mod tests {
                 identity: "ŻÓŁĆ.EXE".into(),
                 target: LockTarget::Window,
                 name: None,
+                lock_cursor: true,
+                mute_in_background: false,
             }
             .matches("żółć", None)
         );
@@ -421,6 +593,8 @@ mod tests {
                 identity: r"C:\Games\zzz.exe".into(),
                 target: LockTarget::Monitor,
                 name: Some("ZZZ".into()),
+                lock_cursor: true,
+                mute_in_background: false,
             }],
             start_with_windows: true,
             language: Language::TraditionalChinese,
@@ -437,6 +611,8 @@ mod tests {
             identity: r"C:\Games\zzz.exe".into(),
             target: LockTarget::default(),
             name: None,
+            lock_cursor: true,
+            mute_in_background: false,
         };
         assert_eq!(app.display_name(), r"C:\Games\zzz.exe");
 
@@ -467,6 +643,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(settings.apps[0].name, None);
+        assert!(settings.apps[0].lock_cursor);
+        assert!(!settings.apps[0].mute_in_background);
         assert_eq!(settings.language, Language::System);
     }
 
@@ -474,6 +652,146 @@ mod tests {
     fn old_settings_default_startup_to_off() {
         let settings: Settings = serde_json::from_str(r#"{"apps":[]}"#).unwrap();
         assert!(!settings.start_with_windows);
+    }
+
+    fn managed(identity: &str, mute: bool) -> ManagedApplication {
+        ManagedApplication {
+            identity: identity.into(),
+            target: LockTarget::Window,
+            name: None,
+            lock_cursor: true,
+            mute_in_background: mute,
+        }
+    }
+
+    fn session(key: &str, exe: &str, muted: bool) -> AudioSession {
+        AudioSession {
+            key: key.into(),
+            process_name: exe.into(),
+            process_path: None,
+            muted,
+        }
+    }
+
+    fn keys(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    const CHROME: Option<(&str, Option<&Path>)> = Some(("chrome.exe", None));
+    const GAME: Option<(&str, Option<&Path>)> = Some(("game.exe", None));
+
+    #[test]
+    fn background_mute_follows_the_foreground() {
+        let apps = [managed("game.exe", true)];
+        let mut mute = BackgroundMute::default();
+
+        let actions = mute.plan(&apps, CHROME, &[session("s1", "game.exe", false)]);
+        assert_eq!(actions.mute, keys(&["s1"]));
+
+        let actions = mute.plan(&apps, GAME, &[session("s1", "game.exe", true)]);
+        assert_eq!(actions.unmute, keys(&["s1"]));
+        assert!(mute.owners().is_empty());
+    }
+
+    #[test]
+    fn background_mute_leaves_a_user_mute_alone() {
+        let apps = [managed("game.exe", true)];
+        let mut mute = BackgroundMute::default();
+
+        let muted = [session("s1", "game.exe", true)];
+        assert_eq!(mute.plan(&apps, CHROME, &muted), MuteActions::default());
+        assert_eq!(mute.plan(&apps, GAME, &muted), MuteActions::default());
+    }
+
+    #[test]
+    fn background_mute_respects_a_manual_unmute_until_the_next_switch() {
+        let apps = [managed("game.exe", true)];
+        let mut mute = BackgroundMute::default();
+        let unmuted = [session("s1", "game.exe", false)];
+        mute.plan(&apps, CHROME, &unmuted);
+
+        // The user unmutes the game in the volume mixer while it is in the background.
+        assert_eq!(mute.plan(&apps, CHROME, &unmuted), MuteActions::default());
+        assert_eq!(mute.plan(&apps, GAME, &unmuted), MuteActions::default());
+
+        let actions = mute.plan(&apps, CHROME, &unmuted);
+        assert_eq!(actions.mute, keys(&["s1"]));
+    }
+
+    #[test]
+    fn background_mute_restores_a_program_closed_while_muted() {
+        let apps = [managed("game.exe", true)];
+        let mut mute = BackgroundMute::default();
+        mute.plan(&apps, CHROME, &[session("s1", "game.exe", false)]);
+
+        mute.plan(&apps, CHROME, &[]);
+        assert_eq!(mute.owners(), BTreeSet::from(["game".to_string()]));
+
+        // Windows hands the saved mute to the program's next session.
+        let actions = mute.plan(&apps, GAME, &[session("s2", "game.exe", true)]);
+        assert_eq!(actions.unmute, keys(&["s2"]));
+        assert!(mute.owners().is_empty());
+    }
+
+    #[test]
+    fn background_mute_recovers_after_a_crash() {
+        let apps = [managed("game.exe", true)];
+        let muted = [session("s1", "game.exe", true)];
+
+        let mut restored = BackgroundMute::with_pending(BTreeSet::from(["game".to_string()]));
+        assert_eq!(restored.plan(&apps, GAME, &muted).unmute, keys(&["s1"]));
+
+        let mut adopted = BackgroundMute::with_pending(BTreeSet::from(["game".to_string()]));
+        assert_eq!(adopted.plan(&apps, CHROME, &muted), MuteActions::default());
+        assert_eq!(adopted.plan(&apps, GAME, &muted).unmute, keys(&["s1"]));
+    }
+
+    #[test]
+    fn background_mute_restores_sound_when_turned_off() {
+        let mut mute = BackgroundMute::default();
+        mute.plan(
+            &[managed("game.exe", true)],
+            CHROME,
+            &[session("s1", "game.exe", false)],
+        );
+
+        let actions = mute.plan(
+            &[managed("game.exe", false)],
+            CHROME,
+            &[session("s1", "game.exe", true)],
+        );
+        assert_eq!(actions.unmute, keys(&["s1"]));
+    }
+
+    #[test]
+    fn releasing_background_mute_keeps_closed_programs_for_later() {
+        let apps = [managed("game.exe", true), managed("music.exe", true)];
+        let mut mute = BackgroundMute::default();
+        mute.plan(
+            &apps,
+            CHROME,
+            &[
+                session("s1", "game.exe", false),
+                session("s2", "music.exe", false),
+            ],
+        );
+
+        let actions = mute.release_all(&[session("s1", "game.exe", true)]);
+        assert_eq!(actions.unmute, keys(&["s1"]));
+        assert_eq!(mute.owners(), BTreeSet::from(["music".to_string()]));
+    }
+
+    #[test]
+    fn muted_owners_file_is_removed_when_empty() {
+        let path =
+            std::env::temp_dir().join(format!("window-warden-muted-{}.json", std::process::id()));
+        let owners = BTreeSet::from(["game".to_string()]);
+        save_muted_owners(&path, &owners).unwrap();
+        assert_eq!(load_muted_owners(&path).unwrap(), owners);
+
+        save_muted_owners(&path, &BTreeSet::new()).unwrap();
+        assert!(!path.exists());
+        save_muted_owners(&path, &BTreeSet::new()).unwrap();
     }
 
     #[test]
