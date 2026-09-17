@@ -42,9 +42,9 @@ export component MainWindow inherits Window {
     title: "WindowWarden";
     icon: @image-url("../assets/window-warden.png");
     preferred-width: 780px;
-    preferred-height: 700px;
+    preferred-height: 780px;
     min-width: 560px;
-    min-height: 460px;
+    min-height: 600px;
 
     in property <[ManagedEntry]> managed-apps;
     in-out property <int> managed-current: -1;
@@ -318,8 +318,11 @@ export component MainWindow inherits Window {
                     HorizontalLayout {
                         alignment: start;
 
+                        // Fixed height: the combo box otherwise reports its drop-down
+                        // list as part of its preferred height.
                         ComboBox {
                             min-width: 220px;
+                            height: 32px;
                             model: [@tr("System default"), "English", "繁體中文"];
                             current-index <=> root.language-index;
                             selected(value) => {
@@ -403,126 +406,181 @@ export component MainWindow inherits Window {
 
         Rectangle {
             width: min(parent.width - 48px, 680px);
-            height: min(parent.height - 48px, 700px);
+            height: min(parent.height - 48px, 740px);
             background: Palette.background;
             border-color: Palette.border;
             border-width: 1px;
             border-radius: 8px;
 
             VerticalLayout {
-                padding: 16px;
-                spacing: 8px;
+                padding: 20px;
+                spacing: 16px;
 
                 Text {
                     text: root.editor-editing ? @tr("Edit application") : @tr("Add application");
                     color: Palette.foreground;
                     font-size: 16px;
                     font-weight: 600;
+                    vertical-stretch: 0;
                 }
 
-                HorizontalLayout {
-                    spacing: 8px;
-
-                    Text {
-                        text: @tr("Running applications (window title — application path)");
-                        color: Palette.foreground;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        horizontal-stretch: 1;
-                    }
-
-                    Button {
-                        text: @tr("Refresh");
-                        clicked => {
-                            root.refresh-running();
-                        }
-                    }
-                }
-
-                StandardListView {
-                    vertical-stretch: 1;
-                    model: root.running-apps;
-                    current-item <=> root.running-current;
-                    current-item-changed(index) => {
-                        root.running-selected(index);
-                    }
-                }
-
-                Text {
-                    text: @tr("Display name (optional)");
-                    color: Palette.foreground;
-                }
-
-                LineEdit {
-                    text <=> root.editor-name;
-                }
-
-                Text {
-                    text: @tr("Application path or executable name");
-                    color: Palette.foreground;
-                }
-
-                LineEdit {
-                    text <=> root.editor-identity;
-                }
-
-                Text {
-                    text: @tr("Features");
-                    color: Palette.foreground;
-                    font-weight: 600;
-                }
-
-                CheckBox {
-                    text: @tr("Lock cursor");
-                    checked <=> root.editor-lock-cursor;
-                }
-
-                if root.editor-lock-cursor: VerticalLayout {
-                    padding-left: 28px;
+                // Only the list of running applications takes up spare height.
+                VerticalLayout {
                     spacing: 6px;
-
-                    Text {
-                        text: @tr("Cursor boundary");
-                        color: Palette.foreground;
-                    }
+                    vertical-stretch: 1;
 
                     HorizontalLayout {
-                        alignment: start;
+                        spacing: 8px;
 
-                        ComboBox {
-                            min-width: 260px;
-                            model: [root.target-name(0), root.target-name(1)];
-                            current-index <=> root.editor-target;
+                        Text {
+                            text: @tr("Running applications (window title — application path)");
+                            color: Palette.foreground;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+
+                        Button {
+                            text: @tr("Refresh");
+                            clicked => {
+                                root.refresh-running();
+                            }
                         }
                     }
 
-                    Text {
-                        text: root.target-hint(root.editor-target);
-                        color: Palette.foreground;
-                        opacity: 0.7;
-                        wrap: word-wrap;
+                    StandardListView {
+                        min-height: 96px;
+                        vertical-stretch: 1;
+                        model: root.running-apps;
+                        current-item <=> root.running-current;
+                        current-item-changed(index) => {
+                            root.running-selected(index);
+                        }
                     }
                 }
 
-                CheckBox {
-                    text: @tr("Mute in background");
-                    checked <=> root.editor-mute;
-                }
-
-                if root.editor-mute: HorizontalLayout {
-                    padding-left: 28px;
+                VerticalLayout {
+                    spacing: 6px;
+                    vertical-stretch: 0;
 
                     Text {
-                        text: @tr("Mutes this application while another window is in the foreground, and restores its sound when it comes back.");
+                        text: @tr("Display name (optional)");
                         color: Palette.foreground;
-                        opacity: 0.7;
-                        wrap: word-wrap;
+                    }
+
+                    LineEdit {
+                        text <=> root.editor-name;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 6px;
+                    vertical-stretch: 0;
+
+                    Text {
+                        text: @tr("Application path or executable name");
+                        color: Palette.foreground;
+                    }
+
+                    LineEdit {
+                        text <=> root.editor-identity;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 6px;
+                    vertical-stretch: 0;
+
+                    Text {
+                        text: @tr("Features");
+                        color: Palette.foreground;
+                    }
+
+                    // Tinted from the text colour so the outline stays light in both themes.
+                    Rectangle {
+                        background: Palette.alternate-background;
+                        border-color: Palette.foreground.with-alpha(0.14);
+                        border-width: 1px;
+                        border-radius: 6px;
+
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 12px;
+
+                            VerticalLayout {
+                                spacing: 10px;
+
+                                CheckBox {
+                                    text: @tr("Lock cursor");
+                                    checked <=> root.editor-lock-cursor;
+                                }
+
+                                // Indented to line up with the check box label.
+                                if root.editor-lock-cursor: VerticalLayout {
+                                    padding-left: 28px;
+                                    spacing: 6px;
+
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        alignment: start;
+
+                                        Text {
+                                            text: @tr("Cursor boundary");
+                                            color: Palette.foreground;
+                                            vertical-alignment: center;
+                                        }
+
+                                        // Fixed height: the combo box otherwise reports its drop-down
+                                        // list as part of its preferred height.
+                                        ComboBox {
+                                            width: 240px;
+                                            height: 32px;
+                                            model: [root.target-name(0), root.target-name(1)];
+                                            current-index <=> root.editor-target;
+                                        }
+                                    }
+
+                                    Text {
+                                        text: root.target-hint(root.editor-target);
+                                        color: Palette.foreground;
+                                        opacity: 0.7;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                height: 1px;
+                                background: Palette.foreground.with-alpha(0.10);
+                            }
+
+                            VerticalLayout {
+                                spacing: 6px;
+
+                                CheckBox {
+                                    text: @tr("Mute in background");
+                                    checked <=> root.editor-mute;
+                                }
+
+                                if root.editor-mute: HorizontalLayout {
+                                    padding-left: 28px;
+
+                                    Text {
+                                        text: @tr("Mutes it while another window is in front, and restores its sound when it returns.");
+                                        color: Palette.foreground;
+                                        opacity: 0.7;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
                 HorizontalLayout {
                     spacing: 8px;
                     alignment: end;
+                    vertical-stretch: 0;
 
                     Button {
                         text: @tr("Save");
