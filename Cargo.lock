@@ -5379,7 +5379,7 @@ dependencies = [
 
 [[package]]
 name = "window-warden"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "raw-window-handle",
  "rfd",
