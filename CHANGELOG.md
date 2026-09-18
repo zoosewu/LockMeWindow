@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/zoosewu/LockMeWindow/compare/v0.5.1...v0.5.2) (2026-09-18)
+
+
+### Changed
+
+* shrink the release binary ([c834ef4](https://github.com/zoosewu/LockMeWindow/commit/c834ef4cdfaf66a5c3c930eebb55f20d2b44328d))
+
 ## [0.5.1](https://github.com/zoosewu/LockMeWindow/compare/v0.5.0...v0.5.1) (2026-09-17)
 
 
